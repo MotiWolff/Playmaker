@@ -2,23 +2,14 @@ import psycopg2
 
 
 class PostgresConnector:
-    def __init__(self, host:str, port:str, user:str, password:str, dbname:str):
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.dbname = dbname
+    def __init__(self, postgres_url:str):
+        self.postgres_url = postgres_url
 
 
     def connect(self):
         try:
-            conn = psycopg2.connect(
-                host=self.host,
-                port=self.port,
-                user=self.user,
-                password=self.password,
-                dbname=self.dbname,
-            )
+            conn = psycopg2.connect(self.postgres_url)
             return conn
+
         except Exception as e:
             print(f'failed to connect to postgres, exception: {e}')
