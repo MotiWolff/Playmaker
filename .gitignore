@@ -205,3 +205,121 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ====================================
+# Playmaker Project Specific
+# ====================================
+
+# Data files and datasets
+data/
+*.csv
+*.json
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+raw_data/
+processed_data/
+datasets/
+football-data/
+
+# Model artifacts and training outputs
+models/
+*.joblib
+*.pkl
+*.h5
+*.hdf5
+*.onnx
+*.tflite
+model_artifacts/
+training_logs/
+experiments/
+mlruns/
+.mlflow/
+
+# Jupyter notebooks checkpoints and outputs
+*.ipynb
+.ipynb_checkpoints/
+notebooks/checkpoints/
+
+# Streamlit specific
+.streamlit/
+streamlit_cache/
+
+# FastAPI specific
+.pytest_cache/
+test_results/
+
+# Database files and migrations
+*.db
+*.sqlite
+*.sqlite3
+alembic/versions/*.py
+!alembic/versions/__init__.py
+
+# Environment and configuration
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+config.ini
+secrets.yaml
+credentials.json
+api_keys.json
+
+# Logs and monitoring
+logs/
+*.log
+log/
+monitoring/
+prometheus_data/
+grafana_data/
+
+# Docker and deployment
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
+
+# IDE and editor specific
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Coverage and testing
+.coverage
+htmlcov/
+.pytest_cache/
+coverage.xml
+.tox/
+.nox/
+
+# Documentation builds
+docs/_build/
+site/
