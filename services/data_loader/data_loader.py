@@ -1,9 +1,7 @@
-import csv
-import os
 from io import StringIO
-
 import requests
 import pandas as pd
+
 
 class DataLoader:
 
