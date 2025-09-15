@@ -43,4 +43,22 @@ class KafkaConfig:
             auto_offset_reset=os.getenv("KAFKA_AUTO_OFFSET_RESET", "earliest"),
         )
 
+    def common_security_kwargs(self) -> dict:
+        """Return kwargs dict for kafka-python clients based on config.
+
+        Note: `bootstrap_servers` is returned as a list as expected by kafka-python.
+        """
+        kwargs: dict = {
+            "bootstrap_servers": [s.strip() for s in self.bootstrap_servers.split(",") if s.strip()],
+            "client_id": self.client_id,
+            "security_protocol": self.security_protocol,
+        }
+        if self.security_protocol.startswith("SASL"):
+            if self.sasl_mechanism:
+                kwargs["sasl_mechanism"] = self.sasl_mechanism
+            if self.sasl_username is not None and self.sasl_password is not None:
+                kwargs["sasl_plain_username"] = self.sasl_username
+                kwargs["sasl_plain_password"] = self.sasl_password
+        return kwargs
+
 

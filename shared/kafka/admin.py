@@ -4,6 +4,7 @@ from kafka import KafkaAdminClient
 from kafka.admin import NewTopic
 
 from .config import KafkaConfig
+from shared.logging.logger import Logger
 
 
 class KafkaAdmin:
@@ -11,6 +12,8 @@ class KafkaAdmin:
 
     def __init__(self, config: Optional[KafkaConfig] = None) -> None:
         self.config = config or KafkaConfig.from_env()
+        # Initialize reusable logger
+        self.logger = Logger.get_logger(name="playmaker_kafka_admin")
         self._admin = KafkaAdminClient(**self.config.common_security_kwargs())
 
     def create_topics_if_missing(
