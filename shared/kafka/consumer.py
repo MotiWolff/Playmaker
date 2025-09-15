@@ -3,6 +3,7 @@ import logging
 from typing import Any, Callable, Iterable, List, Optional
 
 from kafka import KafkaConsumer
+from shared.logging.logger import Logger
 
 from .config import KafkaConfig
 
@@ -24,6 +25,8 @@ class JsonKafkaConsumer:
         **overrides: Any,
     ) -> None:
         self.config = config or KafkaConfig.from_env()
+        # Initialize reusable logger
+        self.logger = Logger.get_logger(name="playmaker_kafka_consumer")
         consumer_kwargs = {
             **self.config.common_security_kwargs(),
             "group_id": group_id,
