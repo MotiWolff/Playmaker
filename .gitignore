@@ -1,6 +1,12 @@
 services/model/models/
-tests/
+services/model/services/model/models/
+services/model/tests/
 scripts/
 trash/
 
+# Python noise
+__pycache__/
+*.pyc
 
+# model artifacts
+*.joblibgit rm -r --cached services/model/models
