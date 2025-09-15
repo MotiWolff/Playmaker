@@ -1,12 +1,19 @@
+# Ignore IDE settings
+.idea/
+
+# Ignore model artifacts
 services/model/models/
 services/model/services/model/models/
+*.joblib
+
+# Ignore test folders
 services/model/tests/
+git check-ignore -v services/model/models/somefile.joblib
+
+# Ignore development scripts and trash
 scripts/
 trash/
 
-# Python noise
+# Python cache files
 __pycache__/
 *.pyc
-
-# model artifacts
-*.joblibgit rm -r --cached services/model/models
