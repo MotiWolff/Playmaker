@@ -1,9 +1,6 @@
 # services/model/train.py
 from __future__ import annotations
 
-import argparse
-import json
-import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +12,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, log_loss
 
-from data_access import load_cfg, read_training_frame, write_model_version
+from services.model.data_access.data_access import load_cfg, read_training_frame, write_model_version
 from feature_builder import build_features
 
 
@@ -199,24 +196,17 @@ def train_pipeline(cfg_path: str = "services/model/config/config.yaml") -> Tuple
 # ---------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Train 3-class RF with time-based split.")
-    parser.add_argument(
-        "--cfg",
-        default="services/model/config/config.yaml",
-        help="Path to YAML config.",
-    )
-    args = parser.parse_args()
-
     try:
-        model_id, artifact = train_pipeline(cfg_path=args.cfg)
+        # Always resolve YAML next to this file, no matter the working dir
+        cfg_path = str(Path(__file__).resolve().parent / "config" / "config.yaml")
+        print(">> Loading config from:", cfg_path)
+
+        model_id, artifact = train_pipeline(cfg_path=cfg_path)
         print("\n✅ Training complete.")
         print(f"   model_id      : {model_id}")
         print(f"   artifact_path : {artifact}")
     except Exception as e:
-        # Surface a clean message; exit non-zero for CI/CD awareness
         print(f"\n❌ Training failed: {e}")
         raise
-
-
 if __name__ == "__main__":
     main()

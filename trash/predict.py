@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple, List
@@ -11,12 +10,12 @@ import joblib
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
+from services.model.ratings import compute_elo_pre_post
 
-from data_access import (
+from services.model.data_access.data_access import (
     load_cfg,
     get_engine,
     read_training_frame,
-    read_upcoming_fixtures,
     upsert_predictions,
 )
 from feature_builder import build_features  # used to learn column means/imputation
@@ -129,15 +128,32 @@ def _team_points_from_row(row: pd.Series, team_name: str) -> int:
 
 
 def _pre_match_rolling(df_hist: pd.DataFrame, team: str, as_of: pd.Timestamp,
-                       form_window: int = 5, goal_window: int = 10) -> Dict[str, float]:
+                       form_window: int = 5, goal_window: int = 10,
+                       elo_timeline: Dict[str, pd.DataFrame] | None = None) -> Dict[str, float]:
     """
     Compute pre-match rolling stats for a team as of 'as_of' (strictly before).
     Uses the same feature meanings as in training.
     """
-    h = df_hist[((df_hist["HomeTeam"] == team) | (df_hist["AwayTeam"] == team)) & (df_hist["Date"] < as_of)].copy()
+    h = df_hist[
+        ((df_hist["HomeTeam"] == team) | (df_hist["AwayTeam"] == team)) &
+        (df_hist["Date"] < as_of)
+    ].copy()
     h = h.sort_values("Date")
 
-    # Shots/corners/cards per perspective
+    # rest days as of the fixture (days since last played match)
+    last_date = h["Date"].max() if not h.empty else pd.NaT
+    rest_days = (as_of - last_date).days if pd.notna(last_date) else np.nan
+
+    # elo as-of: last post-elo at or before as_of
+    elo_as_of = np.nan
+    if elo_timeline is not None:
+        t = elo_timeline.get(team)
+        if t is not None and not t.empty:
+            # t: DataFrame with columns ["date", "elo_post"], sorted by date
+            idx = t["date"].searchsorted(as_of, side="right") - 1
+            if idx >= 0:
+                elo_as_of = float(t.iloc[idx]["elo_post"])
+
     # Build columns from the team's perspective
     def persp(row):
         if row["HomeTeam"] == team:
@@ -153,7 +169,9 @@ def _pre_match_rolling(df_hist: pd.DataFrame, team: str, as_of: pd.Timestamp,
         return {
             "form5": np.nan, "gf10": np.nan, "ga10": np.nan,
             "shots5": np.nan, "corn5": np.nan, "yel5": np.nan, "red5": np.nan,
-            "n_prior": 0
+            "n_prior": 0,
+            "rest_days": float(rest_days) if pd.notna(rest_days) else np.nan,
+            "elo": float(elo_as_of) if pd.notna(elo_as_of) else np.nan,
         }
 
     T = h.apply(persp, axis=1)
@@ -170,11 +188,15 @@ def _pre_match_rolling(df_hist: pd.DataFrame, team: str, as_of: pd.Timestamp,
     return {
         "form5": form5, "gf10": gf10, "ga10": ga10,
         "shots5": shots5, "corn5": corn5, "yel5": yel5, "red5": red5,
-        "n_prior": int(len(T))
+        "n_prior": int(len(T)),
+        "rest_days": float(rest_days) if pd.notna(rest_days) else np.nan,
+        "elo": float(elo_as_of) if pd.notna(elo_as_of) else np.nan,
     }
 
 
-def _fixture_feature_rows(fixt: pd.DataFrame, hist_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _fixture_feature_rows(fixt: pd.DataFrame, hist_df: pd.DataFrame,
+                          elo_timeline: Dict[str, pd.DataFrame] | None = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+
     """
     Build one feature row per fixture, matching the training feature names.
     Returns:
@@ -188,8 +210,10 @@ def _fixture_feature_rows(fixt: pd.DataFrame, hist_df: pd.DataFrame) -> Tuple[pd
         as_of = pd.to_datetime(r["match_utc"])
         home, away = r["home_name"], r["away_name"]
 
-        H = _pre_match_rolling(hist_df, home, as_of)
-        A = _pre_match_rolling(hist_df, away, as_of)
+
+        H = _pre_match_rolling(hist_df, home, as_of, elo_timeline=elo_timeline)
+        A = _pre_match_rolling(hist_df, away, as_of, elo_timeline=elo_timeline)
+
 
         # Create training-aligned feature names
         row = {
@@ -199,6 +223,12 @@ def _fixture_feature_rows(fixt: pd.DataFrame, hist_df: pd.DataFrame) -> Tuple[pd
             "away_shots5": A["shots5"], "away_corn5": A["corn5"], "away_yel5": A["yel5"], "away_red5": A["red5"],
             # Odds-derived features (if you later store odds for fixtures, fill them here)
             "b365_ph": np.nan, "b365_pd": np.nan, "b365_pa": np.nan,
+            # NEW:
+            "home_rest_days": H["rest_days"],
+            "away_rest_days": A["rest_days"],
+            "home_elo": H["elo"],
+            "away_elo": A["elo"],
+            "elo_diff": (H["elo"] - A["elo"]) if (pd.notna(H["elo"]) and pd.notna(A["elo"])) else np.nan,
         }
         rows.append(row)
 
@@ -268,6 +298,25 @@ def predict_pipeline(
     team_map = _get_team_lookup(cfg)
     df_hist_db = read_training_frame(cfg)
     df_hist = _adapt_history_schema(df_hist_db, team_map)
+    # Build Elo timeline per team (post-match Elo, for as-of lookups)
+    elo_df = compute_elo_pre_post(df_hist)  # has Date, HomeTeam, AwayTeam, *_elo_post
+    # team-wise chronological post-elo series
+    elo_home = elo_df[["HomeTeam", "Date", "home_elo_post"]].rename(
+        columns={"HomeTeam": "team", "Date": "date", "home_elo_post": "elo_post"}
+    )
+    elo_away = elo_df[["AwayTeam", "Date", "away_elo_post"]].rename(
+        columns={"AwayTeam": "team", "Date": "date", "away_elo_post": "elo_post"}
+    )
+    elo_home["date"] = pd.to_datetime(elo_home["date"])
+    elo_away["date"] = pd.to_datetime(elo_away["date"])
+
+    elo_ts = pd.concat([elo_home, elo_away], ignore_index=True).sort_values(["team", "date"])
+    # pack into dict for quick per-team lookup
+    elo_timeline: Dict[str, pd.DataFrame] = {
+        t: grp[["date", "elo_post"]].reset_index(drop=True)
+        for t, grp in elo_ts.groupby("team", sort=False)
+    }
+
 
     # Learn training column means via the same builder used for training
     print(">> Recomputing training feature means (for imputation)…")
@@ -285,7 +334,8 @@ def predict_pipeline(
     print(f"   Fixtures to score: {len(fixt)}")
 
     print(">> Building pre-match features for fixtures…")
-    Xf_raw, snap = _fixture_feature_rows(fixt, df_hist)
+    Xf_raw, snap = _fixture_feature_rows(fixt, df_hist, elo_timeline=elo_timeline)
+
 
     print(">> Imputing missing values and aligning to model's feature order…")
     Xf = _impute_and_align(Xf_raw, train_means, feature_cols)

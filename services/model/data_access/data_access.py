@@ -1,5 +1,6 @@
 # services/model/data_access.py
 from __future__ import annotations
+from pathlib import Path
 
 import os
 import json
@@ -17,28 +18,40 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 def load_cfg(path: str = "services/model/config/config.yaml") -> Dict[str, Any]:
     """
-    Load YAML config. Env variable DB_DSN (if present) overrides db_dsn.
+    Load YAML config. Env var DB_DSN overrides db_dsn.
+    Searches a few sensible locations so tests run no matter the CWD.
     """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-    except FileNotFoundError as e:
-        raise FileNotFoundError(f"Config file not found at '{path}'.") from e
-    except Exception as e:
-        raise RuntimeError(f"Failed to parse config at '{path}': {e}") from e
+    candidates = []
+    # 1) what the caller passed
+    candidates.append(Path(path))
+    # 2) next to this file: services/model/config/config.yaml
+    candidates.append(Path(__file__).resolve().parent / "config" / "config.yaml")
+    # 3) project-root style: <cwd>/services/model/config/config.yaml
+    candidates.append(Path.cwd() / "services" / "model" / "config" / "config.yaml")
 
-    # Allow env override for DSN (useful in Docker/CI)
-    env_dsn = os.getenv("DB_DSN")
-    if env_dsn:
-        cfg["db_dsn"] = env_dsn
+    last_err = None
+    for cand in candidates:
+        try:
+            with open(cand, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            # Allow env override for DSN
+            env_dsn = os.getenv("DB_DSN")
+            if env_dsn:
+                cfg["db_dsn"] = env_dsn
+            # Basic validation
+            if "db_dsn" not in cfg or not cfg["db_dsn"]:
+                raise ValueError("db_dsn missing in config and DB_DSN not set.")
+            if "tables" not in cfg:
+                raise ValueError("tables section missing in config.")
+            return cfg
+        except FileNotFoundError as e:
+            last_err = e
+            continue
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse config at '{cand}': {e}") from e
 
-    # Basic validation
-    if "db_dsn" not in cfg or not cfg["db_dsn"]:
-        raise ValueError("db_dsn missing in config and DB_DSN not set.")
-    if "tables" not in cfg:
-        raise ValueError("tables section missing in config.")
-    return cfg
-
+    tried = ", ".join(str(c) for c in candidates)
+    raise FileNotFoundError(f"Config file not found. Tried: {tried}") from last_err
 
 def get_engine(cfg: Dict[str, Any]) -> Engine:
     """
@@ -90,6 +103,10 @@ def read_fixtures_scheduled(cfg: Dict[str, Any]) -> pd.DataFrame:
 
 # ------------- Writers -------------
 
+from sqlalchemy import text, bindparam
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import SQLAlchemyError
+
 def write_model_version(
     cfg: Dict[str, Any],
     model_name: str,
@@ -98,31 +115,27 @@ def write_model_version(
     artifact_uri: str,
 ) -> int:
     """
-    Insert a new row into model_version and return model_id (PK).
-    Matches your schema:
-      model_version(model_id SERIAL PK, model_name TEXT, trained_on_dset TEXT,
-                    metrics JSONB, artifact_uri TEXT, created_at TIMESTAMPTZ)
+    Insert a row into model_version and return model_id.
+    Uses a proper bound JSONB parameter for `metrics`.
     """
-    table = cfg["tables"]["versions"]
     eng = get_engine(cfg)
-    sql = text(f"""
-        INSERT INTO {table} (model_name, trained_on_dset, metrics, artifact_uri)
-        VALUES (:model_name, :trained_on_dset, :metrics::jsonb, :artifact_uri)
+    sql = text("""
+        INSERT INTO model_version (model_name, trained_on_dset, metrics, artifact_uri)
+        VALUES (:model_name, :trained_on_dset, :metrics, :artifact_uri)
         RETURNING model_id;
-    """)
+    """).bindparams(bindparam("metrics", type_=JSONB))
+
     try:
         with eng.begin() as con:
             res = con.execute(sql, {
                 "model_name": model_name,
                 "trained_on_dset": trained_on_dset,
-                "metrics": json.dumps(metrics),
+                "metrics": metrics,          # pass the dict; driver adapts to JSONB
                 "artifact_uri": artifact_uri,
             })
-            model_id = res.scalar_one()
-            return int(model_id)
+            return int(res.scalar_one())
     except SQLAlchemyError as e:
         raise RuntimeError(f"Failed to insert model_version: {e}") from e
-
 
 def upsert_predictions(
     cfg: Dict[str, Any],
@@ -211,21 +224,40 @@ def upsert_predictions(
 
 def read_training_frame(cfg: Dict[str, Any]) -> pd.DataFrame:
     """
-    Adapter to return a DataFrame shaped like the CSVs the feature builder expects.
-    Map your DB column names to expected names if needed.
-    The match_clean schema you shared already lines up with:
-      Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HS, AS, HC, AC, HY, AY, HR, AR, B365H, B365D, B365A
+    Return a DataFrame already shaped for feature_builder.build_features:
+    Columns: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HS, AS, HC, AC, HY, AY, HR, AR, B365H, B365D, B365A
     """
-    df = read_match_clean(cfg)
-    # If your DB columns differ, rename here. Example:
-    # df = df.rename(columns={
-    #     "match_date": "Date",
-    #     "home_goals": "FTHG",
-    #     "away_goals": "FTAG",
-    #     "b365h": "B365H",
-    #     ...
-    # })
-    return df
+    eng = get_engine(cfg)
+    t_train = cfg["tables"]["train"]
+    sql = f"""
+        SELECT
+            mc.match_date AS "Date",
+            th.name       AS "HomeTeam",
+            ta.name       AS "AwayTeam",
+            mc.home_goals AS "FTHG",
+            mc.away_goals AS "FTAG",
+            mc.result     AS "FTR",
+            mc.hs         AS "HS",
+            mc."as"       AS "AS",
+            mc.hc         AS "HC",
+            mc.ac         AS "AC",
+            mc.hy         AS "HY",
+            mc.ay         AS "AY",
+            mc.hr         AS "HR",
+            mc.ar         AS "AR",
+            mc.b365h      AS "B365H",
+            mc.b365d      AS "B365D",
+            mc.b365a      AS "B365A"
+        FROM {t_train} mc
+        JOIN team th ON th.team_id = mc.home_team_id
+        JOIN team ta ON ta.team_id = mc.away_team_id
+        ORDER BY mc.match_date;
+    """
+    try:
+        return pd.read_sql(sql, eng)
+    except SQLAlchemyError as e:
+        raise RuntimeError(f"Failed to read/shape training frame: {e}") from e
+
 
 
 def read_upcoming_fixtures(cfg: Dict[str, Any]) -> pd.DataFrame:

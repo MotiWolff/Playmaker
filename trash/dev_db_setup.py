@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 from sqlalchemy import text
-from data_access import load_cfg, get_engine
+from services.model.data_access.data_access import load_cfg, get_engine
 
 # ---- Tables (idempotent) ----
 SCHEMA_STMTS = [

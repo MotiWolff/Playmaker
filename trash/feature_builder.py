@@ -2,7 +2,9 @@
 from __future__ import annotations
 import pandas as pd
 import numpy as np
+import warnings
 from typing import Tuple, List
+from services.model.ratings import compute_elo_pre_post
 
 # ---------------------------
 # Config-like constants
@@ -23,14 +25,24 @@ OPTIONAL_COLS: List[str] = [
 # ---------------------------
 
 def _ensure_datetime(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure Date is datetime; coerce bad values to NaT."""
+    """Ensure Date is datetime64[ns] naive (no tz). Coerce bad values to NaT and validate."""
     df = df.copy()
+    if "Date" not in df.columns:
+        raise ValueError("Column 'Date' is missing.")
+
     try:
-        if not pd.api.types.is_datetime64_any_dtype(df.get("Date", pd.Series(dtype="datetime64[ns]"))):
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce", utc=False)
+        # Parse with UTC then convert to naive (consistent baseline)
+        parsed = pd.to_datetime(df["Date"], errors="coerce", utc=True)
+        before = len(parsed)
+        df["Date"] = parsed.dt.tz_convert("UTC").dt.tz_localize(None)
+        n_nat = df["Date"].isna().sum()
+        if n_nat > 0 and n_nat / before > 0.05:
+            # If >5% failed to parse, treat as a data issue worth surfacing
+            raise ValueError(f"Too many unparseable dates: {n_nat}/{before}")
     except Exception as e:
         raise ValueError(f"Failed to parse 'Date' to datetime: {e}")
     return df
+
 
 
 def _validate_columns(df: pd.DataFrame) -> None:
@@ -107,42 +119,63 @@ def _long_format(df: pd.DataFrame) -> pd.DataFrame:
 
     # Sort for rolling and compute "games already played" (prior matches)
     long = long.sort_values(["team", "date"]).reset_index(drop=True)
-    # cumcount gives 0 for first appearance; that already means "prior games"
     long["n_played"] = long.groupby("team").cumcount()
+    # days between this match and the team's previous match (rest before current)
+    # long["rest_days"] = long.groupby("team")["date"].diff().dt.days
+
 
     return long
 
 
-def _rolling_team_features(long: pd.DataFrame,
-                           form_window: int = 5,
-                           goal_window: int = 10) -> pd.DataFrame:
+def _rolling_team_features(
+    long: pd.DataFrame,
+    form_window: int = 5,
+    goal_window: int = 10,
+    min_periods_form: int = 1,
+    min_periods_goal: int = 1
+) -> pd.DataFrame:
     """
     Compute pre-match rolling features per team, then shift(1) so the current match isn't included.
-    Returns a dataframe with one row per (team, match_key) containing pre-match features.
+    min_periods_* controls how many prior games are required to compute a value.
     """
     def _roll(grp: pd.DataFrame) -> pd.DataFrame:
         grp = grp.sort_values("date")
-        # Rolling means BEFORE current match → shift(1)
-        grp["form5"]   = grp["points"].rolling(form_window, min_periods=3).mean().shift(1)
-        grp["gf10"]    = grp["gf"].rolling(goal_window, min_periods=5).mean().shift(1)
-        grp["ga10"]    = grp["ga"].rolling(goal_window, min_periods=5).mean().shift(1)
-        grp["shots5"]  = grp["shots"].rolling(form_window, min_periods=3).mean().shift(1)
-        grp["corn5"]   = grp["corners"].rolling(form_window, min_periods=3).mean().shift(1)
-        grp["yel5"]    = grp["yellows"].rolling(form_window, min_periods=3).mean().shift(1)
-        grp["red5"]    = grp["reds"].rolling(form_window, min_periods=3).mean().shift(1)
-        # Prior games count (already excludes current by shift(1) conceptually)
+        # days since last match for this team before current match
+        grp["rest_days"] = grp["date"].diff().dt.days
+
+        # rolling means BEFORE current match → shift(1)
+        grp["form5"]   = grp["points"].rolling(form_window,  min_periods=min_periods_form).mean().shift(1)
+        grp["gf10"]    = grp["gf"].rolling(goal_window,      min_periods=min_periods_goal).mean().shift(1)
+        grp["ga10"]    = grp["ga"].rolling(goal_window,      min_periods=min_periods_goal).mean().shift(1)
+        grp["shots5"]  = grp["shots"].rolling(form_window,   min_periods=min_periods_form).mean().shift(1)
+        grp["corn5"]   = grp["corners"].rolling(form_window, min_periods=min_periods_form).mean().shift(1)
+        grp["yel5"]    = grp["yellows"].rolling(form_window, min_periods=min_periods_form).mean().shift(1)
+        grp["red5"]    = grp["reds"].rolling(form_window,    min_periods=min_periods_form).mean().shift(1)
+        # prior games before this row
         grp["n_prior"] = grp["n_played"].shift(1)
+
         return grp
 
-    try:
-        rolled = long.groupby("team", group_keys=False).apply(_roll)
-    except Exception as e:
-        raise RuntimeError(f"Failed during rolling feature computation: {e}")
+    g = long.groupby("team", group_keys=False)
+
+    # Keep compatibility with pandas versions: try default behavior and silence future warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        rolled = g.apply(_roll)
+
+    # If pandas excluded the group columns and 'team' is missing, restore it
+    if "team" not in rolled.columns:
+        if isinstance(rolled.index, pd.MultiIndex) and "team" in rolled.index.names:
+            rolled = rolled.reset_index(level="team")
+        else:
+            # Fallback: merge back from original long using match_key
+            rolled = rolled.merge(long[["match_key", "team"]], on="match_key", how="left")
 
     keep_cols = [
         "match_key", "team", "is_home",
         "form5", "gf10", "ga10", "shots5", "corn5", "yel5", "red5",
-        "n_prior"
+        "n_prior",
+        "rest_days",
     ]
     return rolled[keep_cols]
 
@@ -157,7 +190,8 @@ def _attach_pre_match_features(wide_df: pd.DataFrame, pre: pd.DataFrame) -> pd.D
     away_pre = pre[~pre["is_home"]].copy()
 
     def add_prefix(df, prefix):
-        cols = ["form5", "gf10", "ga10", "shots5", "corn5", "yel5", "red5", "n_prior"]
+        cols = ["form5", "gf10", "ga10", "shots5", "corn5", "yel5", "red5", "n_prior", "rest_days"]
+
         ren = {c: f"{prefix}_{c}" for c in cols}
         return df.rename(columns=ren)
 
@@ -188,29 +222,32 @@ def _attach_pre_match_features(wide_df: pd.DataFrame, pre: pd.DataFrame) -> pd.D
 
 def _odds_to_implied_probs(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Convert decimal odds to implied probabilities (normalized to remove margin).
-    If odds missing/invalid, leave NaN; caller may impute later.
-    Guards against zero/negative odds.
+    Convert decimal odds (B365H/B365D/B365A) to margin-removed implied probs.
+    Leaves NaN where odds are invalid/missing.
     """
     out = df.copy()
     for col in ("B365H", "B365D", "B365A"):
         if col not in out.columns:
             out[col] = np.nan
 
-    # mask of valid positive odds
-    valid_h = (out["B365H"] > 0)
-    valid_d = (out["B365D"] > 0)
-    valid_a = (out["B365A"] > 0)
+    # ensure numeric
+    out["B365H"] = pd.to_numeric(out["B365H"], errors="coerce")
+    out["B365D"] = pd.to_numeric(out["B365D"], errors="coerce")
+    out["B365A"] = pd.to_numeric(out["B365A"], errors="coerce")
 
-    pH_raw = np.where(valid_h, 1.0 / out["B365H"], np.nan)
-    pD_raw = np.where(valid_d, 1.0 / out["B365D"], np.nan)
-    pA_raw = np.where(valid_a, 1.0 / out["B365A"], np.nan)
+    H = out["B365H"].to_numpy()
+    D = out["B365D"].to_numpy()
+    A = out["B365A"].to_numpy()
 
-    s = pd.Series(pH_raw) + pd.Series(pD_raw) + pd.Series(pA_raw)
+    pH_raw = np.where(H > 0, 1.0 / H, np.nan)
+    pD_raw = np.where(D > 0, 1.0 / D, np.nan)
+    pA_raw = np.where(A > 0, 1.0 / A, np.nan)
+
+    s = pH_raw + pD_raw + pA_raw
     with np.errstate(divide="ignore", invalid="ignore"):
-        out["b365_ph"] = pH_raw / s
-        out["b365_pd"] = pD_raw / s
-        out["b365_pa"] = pA_raw / s
+        out["b365_ph"] = np.where(s > 0, pH_raw / s, np.nan)
+        out["b365_pd"] = np.where(s > 0, pD_raw / s, np.nan)
+        out["b365_pa"] = np.where(s > 0, pA_raw / s, np.nan)
 
     return out
 
@@ -221,98 +258,90 @@ def _odds_to_implied_probs(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_features(
     df_matches: pd.DataFrame,
-    min_history_games: int = 3
+    min_history_games: int = 3,
+    form_window: int = 5,
+    goal_window: int = 10,
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
-    Build safe pre-match features and a 3-class target.
-
-    Parameters
-    ----------
-    df_matches : DataFrame with one row per finished match.
-        Required: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR
-        Optional: HS, AS, HC, AC, HY, AY, HR, AR, B365H, B365D, B365A
-    min_history_games : Minimum prior games each team must have
-        before we keep a row for training (avoids cold start bias).
-
-    Returns
-    -------
-    X : DataFrame  (features)
-    y : Series     (0=Home win, 1=Draw, 2=Away win)
-    meta : DataFrame (Date, HomeTeam, AwayTeam aligned to X/y)
+    Build pre-match features and a 3-class target (H/D/A -> 0/1/2).
+    No leakage: all rolling stats are shifted.
     """
     try:
-        # 0) Validate and prep
         _validate_columns(df_matches)
         df = _ensure_datetime(df_matches).sort_values("Date").reset_index(drop=True)
         if df.empty:
             raise ValueError("Input DataFrame is empty after sorting.")
 
-        # 1) Long perspective + rolling pre-match features
         long = _long_format(df)
-        pre = _rolling_team_features(long, form_window=5, goal_window=10)
+        pre = _rolling_team_features(
+            long,
+            form_window=form_window,
+            goal_window=goal_window,
+            min_periods_form=max(1, min_history_games),
+            min_periods_goal=max(1, min_history_games),
+        )
 
-        # 2) Merge back into match-level
         m = _attach_pre_match_features(df, pre)
 
-        # 3) Add odds-derived features (best-effort)
+        # ELO (pre-match) + alignment
+        elo = compute_elo_pre_post(df)
+        if elo.index.name is None:
+            elo.index.name = "match_key"
+        if len(elo) != len(df) or not (elo.index.values == pd.RangeIndex(len(df)).values).all():
+            raise RuntimeError("compute_elo_pre_post must be indexed by match_key (0..N-1).")
+        m = m.join(elo[["home_elo_pre", "away_elo_pre"]])
+        m = m.rename(columns={"home_elo_pre": "home_elo", "away_elo_pre": "away_elo"})
+        m["elo_diff"] = m["home_elo"] - m["away_elo"]
+
+        # Odds
         try:
             m = _odds_to_implied_probs(m)
         except Exception as e:
-            # Keep going without odds if anything goes wrong
             print(f"[Warning] Odds conversion failed; continuing without odds: {e}")
 
-        # 4) Target (3-class)
+        # Target
+        label_map = {"H": 0, "D": 1, "A": 2}
         if "FTR" not in m.columns:
-            # Safe alignment fallback
             m["FTR"] = df["FTR"].values
+        y = m["FTR"].map(label_map).astype("Int64")
 
-        y = m["FTR"].map({"H": 0, "D": 1, "A": 2})
-
-        # 5) Choose final features
         feature_cols = [
-            # home rolling
             "home_form5", "home_gf10", "home_ga10",
             "home_shots5", "home_corn5", "home_yel5", "home_red5",
-            # away rolling
             "away_form5", "away_gf10", "away_ga10",
             "away_shots5", "away_corn5", "away_yel5", "away_red5",
-            # odds-derived (may be NaN if missing)
             "b365_ph", "b365_pd", "b365_pa",
+            "home_rest_days", "away_rest_days",
+            "home_elo", "away_elo", "elo_diff",
         ]
         for c in feature_cols:
             if c not in m.columns:
-                m[c] = np.nan  # ensure presence
+                m[c] = np.nan
 
-        # 6) History filter: both teams must have >= min_history_games prior matches
-        #    (computed during rolling as "n_prior")
-        if ("home_n_prior" not in m.columns) or ("away_n_prior" not in m.columns):
-            # If not present yet, bring them from pre tables
-            # (they should be there because we added to prefixes in _attach_pre_match_features)
-            pass  # columns are named during attach
-
-        # Sanity: make sure the prefixed n_prior exist
-        if "home_n_prior" not in m.columns or "away_n_prior" not in m.columns:
-            raise RuntimeError("Internal error: prior-games counters missing after merge.")
+        needed_prior = ["home_n_prior", "away_n_prior"]
+        missing_prior = [c for c in needed_prior if c not in m.columns]
+        if missing_prior:
+            raise RuntimeError(f"Internal error: missing prior counters {missing_prior} after merge.")
 
         hist_ok = (m["home_n_prior"] >= min_history_games) & (m["away_n_prior"] >= min_history_games)
+        if not hist_ok.any() and min_history_games > 0:
+            print(f"[Warning] No rows pass both-team history >= {min_history_games}. Relaxing to either-team.")
+            hist_ok = ((m["home_n_prior"] >= min_history_games) | (m["away_n_prior"] >= min_history_games))
+        if not hist_ok.any():
+            print("[Warning] Still empty after relaxation. Using no history filter (demo mode).")
+            hist_ok = pd.Series(True, index=m.index)
 
         X = m.loc[hist_ok, feature_cols].copy()
         y = y.loc[hist_ok].copy()
 
-        if X.empty:
-            raise ValueError(
-                "No rows left after history filtering. "
-                "Try lowering min_history_games or check data coverage."
-            )
-
-        # 7) Fill NaNs with column means (conservative, transparent)
+        # Impute
         X = X.apply(lambda col: col.fillna(col.mean()), axis=0)
+        if X.isna().any().any():
+            X = X.fillna(0.0)
 
-        # 8) Meta
         meta = df.loc[X.index, ["Date", "HomeTeam", "AwayTeam"]].reset_index(drop=True)
-
         return X.reset_index(drop=True), y.reset_index(drop=True), meta
 
     except Exception as e:
-        # Re-raise with context so caller sees a helpful message
         raise RuntimeError(f"build_features failed: {e}") from e
+
