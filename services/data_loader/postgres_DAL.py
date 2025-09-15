@@ -64,6 +64,8 @@ class PostgresDAL:
             json.dumps(comp)
         ))
 
+        self.postgres_conn.commit()
+
     def insert_team(self, team):
         self.cur.execute("""
             INSERT INTO raw_teams (
@@ -91,6 +93,7 @@ class PostgresDAL:
             team.get("lastUpdated"),
             json.dumps(team)
         ))
+        self.postgres_conn.commit()
 
     def insert_match(self, match):
         self.cur.execute("""
@@ -140,6 +143,8 @@ class PostgresDAL:
             json.dumps(match)
         ))
 
+        self.postgres_conn.commit()
+
     def insert_standing(self, comp_id, season_id, standing):
         self.cur.execute("""
             INSERT INTO raw_standings (
@@ -157,3 +162,4 @@ class PostgresDAL:
             standing.get("lastUpdated"),
             json.dumps(standing)
         ))
+        self.postgres_conn.commit()
