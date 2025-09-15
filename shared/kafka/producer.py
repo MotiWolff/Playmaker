@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict, Optional
 
 from kafka import KafkaProducer
+from shared.logging.logger import Logger
 
 from .config import KafkaConfig
 
@@ -16,6 +17,8 @@ class JsonKafkaProducer:
 
     def __init__(self, config: Optional[KafkaConfig] = None, **overrides: Any) -> None:
         self.config = config or KafkaConfig.from_env()
+        # Initialize reusable logger
+        self.logger = Logger.get_logger(name="playmaker_kafka_producer")
         producer_kwargs: Dict[str, Any] = {
             **self.config.common_security_kwargs(),
             "value_serializer": lambda v: json.dumps(v).encode("utf-8"),
