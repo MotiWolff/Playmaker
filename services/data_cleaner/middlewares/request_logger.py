@@ -1,9 +1,13 @@
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+from shared.logging.logger import Logger
+
+my_logger = Logger.get_logger()
+
 
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        print(f"New request: {request.method} {request.url}") # replace with logger
+        my_logger.info(f"New request: {request.method} {request.url}") 
         response = await call_next(request)
         return response
 
