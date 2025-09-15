@@ -1,65 +1,146 @@
-version: "3.8"
 services:
-  playmaker-postgres:
-    image: postgres:16
-    container_name: playmaker-postgres
+  postgres:
+    image: postgres:15
     environment:
-      - POSTGRES_USER=playmaker_user
-      - POSTGRES_PASSWORD=playmaker_secure_password_2024
-      - POSTGRES_DB=playmaker_db
-    volumes:
-      - playmaker_postgres_data:/var/lib/postgresql/data
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
-    restart: unless-stopped
-
-  playmaker-elasticsearch:
-    image: elasticsearch:8.11.0
-    container_name: playmaker-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
-      - cluster.name=playmaker-cluster
-      - node.name=playmaker-node
     volumes:
-      - playmaker_elasticsearch_data:/usr/share/elasticsearch/data
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U playmaker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  playmaker-kafka:
+  kafka:
     image: confluentinc/cp-kafka:7.4.0
-    container_name: playmaker-kafka
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: playmaker-zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_HOST://playmaker-kafka:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_HOST
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      KAFKA_NUM_PARTITIONS: 3
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "9092:9092"
-      - "29092:29092"
     depends_on:
-      - playmaker-zookeeper
-    restart: unless-stopped
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
-  playmaker-zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
-    container_name: playmaker-zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_SERVER_ID: 1
     ports:
       - "2181:2181"
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  data-loader:
+    build:
+      context: .
+      dockerfile: ./services/data_loader/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      FOOTBALL_API_KEY: ${FOOTBALL_API_KEY}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
+      ELASTIC_URL: ${ELASTIC_URL:-http://elasticsearch:9200}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  data-cleaner:
+    build:
+      context: .
+      dockerfile: ./services/data_cleaner/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
+      ELASTIC_URL: ${ELASTIC_URL:-http://elasticsearch:9200}
+    depends_on:
+      - data-loader
+
+  ml-model:
+    build:
+      context: .
+      dockerfile: ./services/ml_model/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
+      ELASTIC_URL: ${ELASTIC_URL:-http://elasticsearch:9200}
+      PROB_TEMPERATURE: "${PROB_TEMPERATURE:-2.0}"
+      PROB_SHRINKAGE: "${PROB_SHRINKAGE:-0.5}"
+    depends_on:
+      - data-cleaner
+
+  api:
+    build:
+      context: .
+      dockerfile: ./services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
+      ELASTIC_URL: ${ELASTIC_URL:-http://elasticsearch:9200}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ml-model
+
+  ui:
+    build:
+      context: .
+      dockerfile: ./ui/Dockerfile
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
 
 volumes:
-  playmaker_postgres_data:
-  playmaker_elasticsearch_data:
+  postgres_data:
+  elasticsearch_data:
