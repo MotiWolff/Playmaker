@@ -18,8 +18,8 @@ def home():
 
 @app.post('/clean')
 def clean(request: TableRequest, db: Session = Depends(get_db)):
-    cleaner = Cleaner(db)
-    result = cleaner.run_pipeline(request.table_name)
+    cleaner = Cleaner(db, request.table_name)
+    result = cleaner.run_pipeline()
     return {"result" : result}
 
 
