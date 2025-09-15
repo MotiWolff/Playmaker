@@ -323,3 +323,6 @@ coverage.xml
 # Documentation builds
 docs/_build/
 site/
+
+
+node_modules/

@@ -37,12 +37,21 @@ class Logger:
                     es_url = f"http://{es_host}"
 
                 if Elasticsearch is not None:
+                    # Ensure compatibility headers for clusters expecting v7/v8
+                    import os
+                    os.environ.setdefault("ELASTIC_CLIENT_APIVERSIONING", "true")
+                    # Use ES 8-compatible media-type headers for clusters < v9
                     es = Elasticsearch([es_url])
+                    compat_headers = {
+                        # Fallback to plain JSON to avoid versioned media-type negotiation issues
+                        "accept": "application/json",
+                        "content-type": "application/json",
+                    }
 
                     class ESHandler(logging.Handler):
                         def emit(self, record: logging.LogRecord) -> None:  # type: ignore[override]
                             try:
-                                es.index(
+                                es.options(headers=compat_headers).index(
                                     index=index,
                                     document={
                                         "timestamp": datetime.now(timezone.utc).isoformat(),
