@@ -1,0 +1,7 @@
+db_dsn: postgresql+psycopg://postgres:postgres@localhost:5432/soccer
+tables:
+  train: match_clean
+  fixtures: fixture
+  predictions: prediction
+  versions: model_version
+seed: 42
