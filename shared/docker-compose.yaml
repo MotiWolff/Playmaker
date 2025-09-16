@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U playmaker"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-playmaker}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,14 +81,13 @@ services:
       dockerfile: ./services/data_loader/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_URL: ${DATABASE_URL}
+      BASE_URL: https://api.football-data.org/v4
       FOOTBALL_API_KEY: ${FOOTBALL_API_KEY}
       ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
       ELASTIC_URL: ${ELASTIC_URL:-http://elasticsearch:9200}
     depends_on:
       postgres:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
 
   data-cleaner:
