@@ -133,12 +133,12 @@ services:
 
   ui:
     build:
-      context: ..
-      dockerfile: ui/Dockerfile
+      context: ../ui
+      dockerfile: Dockerfile
     environment:
       API_BASE_URL: ${API_BASE_URL:-http://api:8000}
     ports:
-      - "5173:5173"
+      - "5173:80"
     depends_on:
       - api
 
