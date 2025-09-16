@@ -76,7 +76,7 @@ def train_pipeline(cfg_path: str) -> Tuple[int, str]:
     print(f"   Log loss:  {metrics['log_loss']:.4f}")
     print(f"   Brier:     {metrics['brier']:.4f}")
 
-    print(">> Saving model artifact…")
+    print(" >> Saving model artifact…")
     store = LocalArtifactStore(base_dir="services/model/models")
     split_info = _split_summary_dict(split.split_date, split.train_range, split.valid_range)
     artifact = store.save(
