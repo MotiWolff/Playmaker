@@ -1,0 +1,28 @@
+# Root dockerignore to keep contexts lean when building from repo root
+.git
+.gitignore
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.pkl
+
+# Python envs
+.venv/
+venv/
+ENV/
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Test and artifacts
+**/tests/
+logs/
+**/*.log
+models/

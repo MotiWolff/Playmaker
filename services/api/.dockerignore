@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# VCS
+.git
+.gitignore
+
+# Editors
+.vscode
+.idea
+
+# Tests
+tests/
