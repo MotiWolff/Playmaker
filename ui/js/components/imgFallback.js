@@ -1,0 +1,1 @@
+export const DEFAULT_FOOTBALL_ICON = 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Association_football.svg/64px-Association_football.svg.png'
