@@ -1,7 +1,7 @@
 import pandas as pd
 from sqlalchemy.orm import Session
-from services.table_fetcher import TableFetcher
-from services.table_creation import GamesTable
+from .table_fetcher import TableFetcher
+from .table_creation import GamesTable
 from shared.logging.logger import Logger
 
 my_logger = Logger.get_logger()
@@ -21,21 +21,37 @@ class Cleaner:
             "score_full_time_away",
             "score_full_time_home",
             "utc_date",
-            "winner",
+            "score_winner",
         ]
         df = pd.DataFrame(table)
-        relevent_data = df[columns_to_keep]
+        # keep only relevant columns and normalize names
+        relevent_data = df[columns_to_keep].rename(columns={
+            "score_winner": "winner",
+        })
+        # coerce dtypes and drop invalid rows
+        # coerce numeric types strictly
+        for col in ["match_id", "home_team_id", "away_team_id"]:
+            if col in relevent_data.columns:
+                relevent_data[col] = pd.to_numeric(relevent_data[col], errors="coerce").astype("Int64")
+        for col in ["score_full_time_home", "score_full_time_away"]:
+            if col in relevent_data.columns:
+                relevent_data[col] = pd.to_numeric(relevent_data[col], errors="coerce").astype("Int64")
+        # drop rows missing required IDs
+        relevent_data = relevent_data.dropna(subset=["match_id", "home_team_id", "away_team_id"])        
         relevent_data = relevent_data.drop_duplicates()
         
         # Deletes a row with more than half empty values
         total_columns = relevent_data.shape[1]
         relevent_data = relevent_data[relevent_data.notna().sum(axis=1) > total_columns / 2] 
 
-        return relevent_data.to_dict(orient="records")
+        # replace pandas NA with None for DB insertion
+        safe_df = relevent_data.where(pd.notna(relevent_data), None)
+        return safe_df.to_dict(orient="records")
     
     def save_data(self, cleaned_data: list):
         try:
-            new_table = GamesTable(f'{self.table_name}_cleaned')
+            # write canonical cleaned matches table
+            new_table = GamesTable('matches_cleaned')
             new_table.create_table()
             new_table.insert_data(self.db, cleaned_data)
         except Exception as e:

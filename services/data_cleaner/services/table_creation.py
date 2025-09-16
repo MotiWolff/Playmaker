@@ -2,7 +2,7 @@ from sqlalchemy import (
     Table, Column, Integer, String, DateTime, MetaData, ForeignKey
 )
 from sqlalchemy.orm import Session
-from db.postgres_conn import engine
+from ..db.postgres_conn import engine
 from shared.logging.logger import Logger
 
 my_logger = Logger.get_logger()
@@ -38,6 +38,7 @@ class GamesTable:
     def insert_data(self, db: Session, data: list[dict]):
         try:
             db.execute(self.table.insert(), data)
+            db.commit()
             my_logger.info(f"The data was successfully inserted into the PostgreSQL database.")
         except Exception as e:
             my_logger.error(f"Faild to insert data to table:{self.table_name}.\nError:{e}")
