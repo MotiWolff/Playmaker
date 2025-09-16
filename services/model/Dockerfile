@@ -4,7 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /app
 RUN pip install --no-cache-dir -U pip && \
-    pip install --no-cache-dir requests python-dotenv psycopg2-binary
+    pip install --no-cache-dir fastapi uvicorn[standard] psycopg2-binary
 COPY shared /app/shared
-COPY services/data_loader /app/services/data_loader
-CMD ["python","-m","services.data_loader.main"]
+COPY services/model /app/services/model
+EXPOSE 8080
+CMD ["python","-m","services.model.main","serve"]
+
+
