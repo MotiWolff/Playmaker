@@ -1,0 +1,9 @@
+selenium==4.14.0
+pandas==2.2.3
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.10
+psycopg[binary]==3.2.10
+deep-translator==1.9.1
+pydantic==2.11.9
+python-dotenv==1.0.0
+pydantic-settings==2.5.2

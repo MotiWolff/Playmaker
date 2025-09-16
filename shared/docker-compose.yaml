@@ -142,6 +142,28 @@ services:
     depends_on:
       - api
 
+  odds-winner:
+    build:
+      context: ../services/odds_winner
+      dockerfile: Dockerfile
+    environment:
+      DB_DSN: ${DB_DSN}
+      SELENIUM_URL: http://selenium:4444/wd/hub
+      WINNER_BASE_URL: ${WINNER_BASE_URL:-https://www.winner.co.il/משחקים/ווינר-ליין/כדורגל}
+      SCRAPE_INTERVAL_SECS: ${SCRAPE_INTERVAL_SECS:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      selenium:
+        condition: service_started
+
+  selenium:
+    image: seleniarm/standalone-chromium:latest
+    shm_size: 2g
+    ports:
+      - "4444:4444"
+
 volumes:
   postgres_data:
   elasticsearch_data:
