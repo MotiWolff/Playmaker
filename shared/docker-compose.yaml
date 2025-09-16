@@ -77,8 +77,8 @@ services:
 
   data-loader:
     build:
-      context: .
-      dockerfile: ./services/data_loader/Dockerfile
+      context: ..
+      dockerfile: services/data_loader/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       POSTGRES_URL: ${DATABASE_URL}
@@ -92,8 +92,8 @@ services:
 
   data-cleaner:
     build:
-      context: .
-      dockerfile: ./services/data_cleaner/Dockerfile
+      context: ..
+      dockerfile: services/data_cleaner/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -104,9 +104,11 @@ services:
 
   ml-model:
     build:
-      context: .
-      dockerfile: ./services/ml_model/Dockerfile
+      context: ..
+      dockerfile: services/model/Dockerfile
     environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
@@ -118,8 +120,8 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: ./services/api/Dockerfile
+      context: ..
+      dockerfile: services/api/Dockerfile
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       ELASTICSEARCH_HOST: ${ELASTICSEARCH_HOST:-elasticsearch:9200}
@@ -131,8 +133,8 @@ services:
 
   ui:
     build:
-      context: .
-      dockerfile: ./ui/Dockerfile
+      context: ..
+      dockerfile: ui/Dockerfile
     environment:
       API_BASE_URL: ${API_BASE_URL:-http://api:8000}
     ports:
