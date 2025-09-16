@@ -8,7 +8,11 @@ interface MatchCardProps {
 }
 
 const MatchCard: React.FC<MatchCardProps> = ({ prediction, className = '' }) => {
-  const { home_team, away_team, predictions, confidence, match_date, elo_home, elo_away } = prediction;
+  const { home_team, away_team, confidence, match_date } = prediction;
+  // Fallbacks for possibly missing properties
+  const predictions = (prediction as any).predictions || { home: 0, draw: 0, away: 0 };
+  const elo_home = (prediction as any).elo_home ?? 0;
+  const elo_away = (prediction as any).elo_away ?? 0;
 
   // Determine the most likely outcome
   const mostLikely: PredictionOutcome = 
