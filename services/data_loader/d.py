@@ -1,7 +1,7 @@
 import requests
 from shared.logging.logger import Logger
-from postgres_connector import PostgresConnector
-from postgres_DAL import PostgresDAL
+from .postgres_connector import PostgresConnector
+from .postgres_DAL import PostgresDAL
 
 class Manager:
     def __init__(self, api_key:str, base_url:str, postgres_url:str):
