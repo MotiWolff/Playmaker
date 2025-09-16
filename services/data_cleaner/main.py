@@ -1,14 +1,26 @@
+"""
+Entry point for running the Clean server using Uvicorn.
+
+This script:
+    - Loads environment variables from a .env file.
+    - Sets the base project path to allow proper imports.
+    - Configures logging using the shared Logger.
+    - Starts the FastAPI server with Uvicorn on the configured host and port.
+"""
+
 from dotenv import load_dotenv
 load_dotenv()
 import os
 import uvicorn
-from server import app
 from pathlib import Path
 import sys
+
 base_path = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(base_path))
 
+from server import app
 from shared.logging.logger import Logger
+
 
 my_logger = Logger.get_logger()
 
