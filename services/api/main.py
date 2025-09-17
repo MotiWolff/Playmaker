@@ -662,9 +662,9 @@ def predict(home_team_id: int, away_team_id: int, kickoff: Optional[datetime] = 
     
     # Final fallback to balanced probabilities
     return {
-        "p_home": 0.40,
-        "p_draw": 0.30,
-        "p_away": 0.30,
+        "p_home": 0.34,
+        "p_draw": 0.32,
+        "p_away": 0.34,
         "home_team_id": home_team_id,
         "away_team_id": away_team_id,
         "model_id": 1,

@@ -7,7 +7,7 @@ import numpy as np
 def compute_elo_pre_post(
     df_matches: pd.DataFrame,
     k: float = 20.0,
-    home_field_adv: float = 60.0,
+    home_field_adv: float = 25.0,
     start_rating: float = 1500.0,
 ) -> pd.DataFrame:
     """
@@ -38,7 +38,7 @@ def compute_elo_pre_post(
 
         # expected scores (Elo uses 1/0.5/0)
         # home advantage applied to home rating in expectation
-        exp_home = 1.0 / (1.0 + 10 ** (-( (rh + home_field_adv) - ra ) / 400.0))
+        exp_home = 1.0 / (1.0 + 10 ** (-(((rh + home_field_adv) - ra) / 400.0)))
         exp_away = 1.0 - exp_home
 
         # actual scores
