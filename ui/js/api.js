@@ -32,5 +32,11 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/predict?home_team_id=${homeTeamId}&away_team_id=${awayTeamId}`)
     if (!response.ok) throw new Error('Failed to get prediction')
     return response.json()
+  },
+
+  async competitionCoverage() {
+    const response = await fetch(`${API_BASE_URL}/analytics/competition_coverage`)
+    if (!response.ok) throw new Error('Failed to fetch competition coverage')
+    return response.json()
   }
 }
