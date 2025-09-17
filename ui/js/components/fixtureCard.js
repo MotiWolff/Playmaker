@@ -42,11 +42,13 @@ export function fixtureCard(fixture) {
       </div>
       
       <div class="text-center mb-3">
-        <span class="badge bg-primary">${fixture.competition_name || 'Match'}</span>
+        <span class="badge bg-primary">${
+          fixture.competition_name || "Match"
+        }</span>
       </div>
       
-      <div class="d-flex align-items-center justify-content-between mb-4">
-        <div class="text-center flex-grow-1">
+      <div class="teams-row mb-4">
+        <div class="text-center team-col">
           <img src="${homeCrest}" 
                alt="${fixture.home.name} crest" 
                class="team-crest mb-2" 
@@ -54,11 +56,11 @@ export function fixtureCard(fixture) {
           <div class="fw-semibold">${fixture.home.name}</div>
         </div>
         
-        <div class="text-center mx-3">
+        <div class="vs-col">
           <div class="fs-4 fw-bold text-muted">VS</div>
         </div>
         
-        <div class="text-center flex-grow-1">
+        <div class="text-center team-col">
           <img src="${awayCrest}" 
                alt="${fixture.away.name} crest" 
                class="team-crest mb-2" 
@@ -70,26 +72,35 @@ export function fixtureCard(fixture) {
       <div class="row g-2">
         <div class="col-4">
           <div class="text-center">
-            <div class="prediction-bar bg-success mb-1" style="height: ${Math.max(homeWinProb * 0.1, 4)}px;"></div>
+            <div class="prediction-bar bg-success mb-1" style="height: ${Math.max(
+              homeWinProb * 0.1,
+              4
+            )}px;"></div>
             <div class="small fw-semibold text-success">${homeWinProb}%</div>
             <div class="small text-muted">Home</div>
           </div>
         </div>
         <div class="col-4">
           <div class="text-center">
-            <div class="prediction-bar bg-warning mb-1" style="height: ${Math.max(drawProb * 0.1, 4)}px;"></div>
+            <div class="prediction-bar bg-warning mb-1" style="height: ${Math.max(
+              drawProb * 0.1,
+              4
+            )}px;"></div>
             <div class="small fw-semibold text-warning">${drawProb}%</div>
             <div class="small text-muted">Draw</div>
           </div>
         </div>
         <div class="col-4">
           <div class="text-center">
-            <div class="prediction-bar bg-danger mb-1" style="height: ${Math.max(awayWinProb * 0.1, 4)}px;"></div>
+            <div class="prediction-bar bg-danger mb-1" style="height: ${Math.max(
+              awayWinProb * 0.1,
+              4
+            )}px;"></div>
             <div class="small fw-semibold text-danger">${awayWinProb}%</div>
             <div class="small text-muted">Away</div>
           </div>
         </div>
       </div>
     </div>
-  `
+  `;
 }
