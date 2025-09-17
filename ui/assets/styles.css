@@ -302,6 +302,14 @@ body {
   background-clip: text;
 }
 
+/* Sticky responsible gambling banner */
+.sticky-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1030; /* above navbar content */
+  background: transparent;
+}
+
 .bg-gradient-primary {
   background: var(--primary-gradient);
 }
