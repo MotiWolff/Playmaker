@@ -1,0 +1,15 @@
+[build]
+  publish = "ui"
+  command = "bash scripts/build_netlify.sh"
+
+# Set API_BASE_URL in Netlify UI → Site settings → Build & deploy → Environment
+# [build.environment]
+#   API_BASE_URL = "https://<your-render-api>.onrender.com"
+
+# Hash-based router does not need SPA redirects, but keep a safe fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+

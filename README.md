@@ -227,4 +227,32 @@ cd shared
 API_BASE_URL=http://api:8000 DATABASE_URL=postgresql://... docker compose exec -T api python /app/scripts/run_refresh.py
 ```
 
+## Deploy: Render (API) + Netlify (UI)
+
+### Render – FastAPI service
+1) Create a PostgreSQL on Render and copy the connection string; ensure it ends with `?sslmode=require`.
+2) Create a Web Service from this repo.
+   - Build command: `docker build -f services/api/Dockerfile -t playmaker-api .`
+   - Start command: `uvicorn services.api.main:app --host 0.0.0.0 --port 8000`
+   - Port: `8000`
+   - Environment:
+     - `DATABASE_URL=postgresql://...?...sslmode=require`
+     - (optional) `PROB_TEMPERATURE`, `PROB_SHRINKAGE`, `MODEL_SERVICE_URL`
+3) Scheduled Job (every 2 days):
+   - Command: `python scripts/run_refresh.py`
+   - Env: `DATABASE_URL` (same), `API_BASE_URL=https://<your-render-app>.onrender.com`
+
+### Netlify – static UI
+1) New site from Git → pick this repo, set base directory to repo root and publish directory to `ui`.
+2) Pre-build hook to set API URL at build time:
+   - Build command: `bash scripts/build_netlify.sh && echo "Static UI prepared"`
+   - Publish directory: `ui`
+   - Environment variables:
+     - `API_BASE_URL=https://<your-render-app>.onrender.com`
+3) Alternatively, if you don’t want a script, edit `ui/js/api.js` to hardcode your API URL before publishing.
+
+Notes
+- The browser must call the public API domain (Render). Ensure `API_BASE_URL` points there.
+- CORS is enabled in the API. To restrict, change `allow_origins` in the FastAPI CORS middleware to your Netlify domain.
+
 –– For deeper details (env vars, thresholds, implementation), see the code under `services/*` and configuration in `shared/.env`.
