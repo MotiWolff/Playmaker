@@ -2,13 +2,19 @@ import { renderDashboard } from './views/dashboard.js'
 import { renderPredict } from './views/predict.js'
 import { renderTeams } from './views/teams.js'
 import { renderAnalytics } from './views/analytics.js'
+import { renderAbout } from "./views/about.js";
+import { renderFAQ } from "./views/faq.js";
+import { renderContact } from "./views/contact.js";
 
 const routes = {
-  '/': renderDashboard,
-  '/predict': renderPredict,
-  '/teams': renderTeams,
-  '/analytics': renderAnalytics
-}
+  "/": renderDashboard,
+  "/predict": renderPredict,
+  "/teams": renderTeams,
+  "/analytics": renderAnalytics,
+  "/about": renderAbout,
+  "/faq": renderFAQ,
+  "/contact": renderContact,
+};
 
 export function initRouter() {
   // Handle initial load

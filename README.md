@@ -199,4 +199,32 @@ Admin (batch):
  - Managed DBs (Render, etc.) typically require `?sslmode=require` in `DATABASE_URL`.
  - If predictions look overly home-biased, update to latest API and run `POST /admin/regenerate_predictions`.
 
+## Scheduled refresh (every 2 days)
+
+A helper script is provided to pull fresh fixtures, update tables, and regenerate predictions:
+
+```
+python scripts/run_refresh.py
+```
+
+Environment required:
+- `DATABASE_URL` (e.g., `postgresql://...?...sslmode=require`)
+- `API_BASE_URL` (defaults to `http://localhost:8000`)
+- `FOOTBALL_API_KEY` (if loader needs it)
+
+To run every 2 days with cron (macOS/Linux):
+
+```
+crontab -e
+# every 2 days at 03:15
+15 3 */2 * * cd /path/to/Playmaker && API_BASE_URL=http://localhost:8000 DATABASE_URL=postgresql://... python scripts/run_refresh.py >> refresh.log 2>&1
+```
+
+Or with Docker (compose services up):
+
+```
+cd shared
+API_BASE_URL=http://api:8000 DATABASE_URL=postgresql://... docker compose exec -T api python /app/scripts/run_refresh.py
+```
+
 –– For deeper details (env vars, thresholds, implementation), see the code under `services/*` and configuration in `shared/.env`.
