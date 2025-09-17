@@ -7,9 +7,9 @@ from ..ports import EloRatingsPort
 
 @dataclass
 class EloParams:
-    k: float = 20.0
     base: float = 1500.0
-    home_adv: float = 60.0  # typical home advantage in Elo points
+    home_adv: float = 25.0  # reduced home advantage to mitigate home bias
+    k: float = 20.0
 
 class EloRatingsAdapter(EloRatingsPort):
     """
