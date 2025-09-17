@@ -109,20 +109,26 @@ export async function renderAnalytics() {
     const container = document.getElementById('competition-stats')
     
     try {
-      const competitions = await api.competitions()
+      const coverageData = await api.competitionCoverage();
       
-      const stats = competitions.map(comp => `
-        <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+      const stats = coverageData
+        .map(
+          (comp) => `
+        <div class="d-flex justify-content-between align-items-center py-3 border-bottom">
           <div class="d-flex align-items-center gap-2">
-            ${comp.emblem_url ? `<img src="${comp.emblem_url}" alt="${comp.name}" width="20" height="20" onerror="this.style.display='none'">` : ''}
             <span class="fw-medium">${comp.name}</span>
           </div>
           <div class="text-end">
-            <div class="fw-bold text-primary">${Math.floor(Math.random() * 50) + 50}%</div>
-            <small class="text-muted">Accuracy</small>
+            <div class="fw-bold text-primary">${comp.coverage}%</div>
+            <small class="text-muted">Coverage</small>
+            <div class="small text-muted mt-1">
+              ${comp.prediction_count}/${comp.fixture_count} fixtures
+            </div>
           </div>
         </div>
-      `).join('')
+      `
+        )
+        .join("");
       
       container.innerHTML = stats || '<div class="text-muted">No competition data available</div>'
     } catch (e) {

@@ -7,12 +7,10 @@ export function fixtureCard(fixture) {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'TBD'
     const date = new Date(dateStr)
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
   }
 
   const formatTime = (dateStr) => {
