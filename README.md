@@ -73,19 +73,54 @@ The system ingests football match data from external APIs, cleans and enriches i
 - Infrastructure
   - PostgreSQL, Kafka + Zookeeper, Elasticsearch (+ optional Kibana).
 
-## Repo structure (high‑level)
+## Repo structure (current)
 ```
 Playmaker/
 ├── services/
 │   ├── api/
+│   │   ├── Dockerfile
+│   │   ├── main.py                 # FastAPI app (endpoints, DB joins, fallbacks)
+│   │   ├── models.py               # Pydantic models
+│   │   └── mock_database.py        # Mock data used as fallback
 │   ├── data_loader/
+│   │   ├── Dockerfile
+│   │   ├── main.py
+│   │   ├── manager.py
+│   │   ├── postgres_connector.py
+│   │   └── postgres_DAL.py
 │   ├── data_cleaner/
-│   └── ml_model/
-├── shared/                 # Common utilities (config, logging, kafka helpers)
-│   └── docker-compose.yaml # Full-stack orchestration for local dev
-├── ui/                     # Vite/React app
-├── README.md               # This file
-└── diagram.png             # Architecture diagram (optional)
+│   │   ├── Dockerfile
+│   │   ├── server.py
+│   │   ├── main.py
+│   │   ├── services/
+│   │   │   ├── cleaner.py
+│   │   │   ├── table_creation.py
+│   │   │   └── table_fetcher.py
+│   │   └── db/postgres_conn.py
+│   ├── model/
+│   │   ├── Dockerfile
+│   │   ├── config/config.yaml
+│   │   ├── feature_builder/        # features, adapters, validators
+│   │   ├── predictor/              # pipeline, artifact loader, writer
+│   │   ├── trainer/                # model training/metrics/registry
+│   │   └── models/                 # packaged artifacts
+│   └── odds_winner/
+│       ├── Dockerfile
+│       ├── app/                    # odds API (sqlite-backed)
+│       └── odds.py
+├── shared/
+│   ├── docker-compose.yaml         # Orchestration (API, UI, Postgres, Kafka, ES, etc.)
+│   ├── config.py
+│   └── logging/
+├── ui/
+│   ├── Dockerfile                  # Nginx-based static serving with envsubst
+│   ├── js/                         # vanilla JS app (pages/components)
+│   └── src/                        # Vite/TS app (App.tsx, services)
+├── scripts/                        # diagnostics
+│   ├── test_model_from_db.py
+│   └── test_es_logging.py
+├── README.md
+└── diagram.png
 ```
 
 ## How to run
@@ -107,6 +142,36 @@ Notes
 - Local defaults use internal Docker hostnames for service-to-service; public ports are exposed on localhost.
 - The `API_BASE_URL` for the UI defaults to `http://api:8000` inside Docker and can be overridden via env.
 
+### Quick start (API + UI only)
+
+If you already have a managed PostgreSQL (e.g., Render), export it and run only API+UI:
+
+```
+export DATABASE_URL="postgresql://<user>:<pass>@<host>/<db>?sslmode=require"
+cd shared
+API_BASE_URL=http://localhost:8000 DATABASE_URL="$DATABASE_URL" docker compose up -d --build api ui
+```
+
+### Full stack (Postgres/Kafka/ES/etc.)
+
+```
+cd shared
+DATABASE_URL="$DATABASE_URL" docker compose up -d --build
+```
+
+### Local dev (without Docker)
+
+- API live reload:
+  ```
+  uvicorn services.api.main:app --reload --port 8000
+  ```
+- UI (Vite) dev server:
+  ```
+  cd ui && npm i && npm run dev
+  # Ensure the UI uses the local API
+  export API_BASE_URL=http://localhost:8000
+  ```
+
 ## Query API
 Purpose: safe, read-only access for consumers.
 - Base: `http://localhost:8000`
@@ -114,14 +179,24 @@ Purpose: safe, read-only access for consumers.
 
 Example endpoints (may vary by implementation):
 - `GET /health`
+- `GET /competitions`
+- `GET /teams`
+- `GET /fixtures/upcoming_with_odds?competition_id=2021`
+- `GET /model_metrics`
+- `GET /analytics/competition_coverage`
 - `GET /matches?team=...&season=...`
 - `GET /predictions?match_id=...`
 - `GET /search?q=...` (Elasticsearch-backed)
+
+Admin (batch):
+- `POST /admin/regenerate_predictions` — regenerate future fixture predictions with current model
 
 ## Troubleshooting
 - Kafka client from the host should connect via the published port; services use the Docker network name `kafka:9092`.
 - Elasticsearch may take time to become healthy; compose includes a healthcheck and service dependencies.
 - Postgres credentials are loaded from `shared/.env`; ensure they match the `DATABASE_URL` used by services.
 - If the UI cannot reach the API from the browser, set `API_BASE_URL=http://localhost:8000` in `shared/.env` and rebuild the `ui` service.
+ - Managed DBs (Render, etc.) typically require `?sslmode=require` in `DATABASE_URL`.
+ - If predictions look overly home-biased, update to latest API and run `POST /admin/regenerate_predictions`.
 
 –– For deeper details (env vars, thresholds, implementation), see the code under `services/*` and configuration in `shared/.env`.
