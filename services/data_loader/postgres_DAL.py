@@ -1,16 +1,16 @@
 import json
 import psycopg2
-from shared.logging import Logger
+from Playmaker.shared.logging.logger import Logger
 
 
 class PostgresDAL:
-    def __init__(self, postgres_conn:psycopg2.extensions.connection):
+    def __init__(self, postgres_conn: psycopg2.extensions.connection):
         self.postgres_conn = postgres_conn
         self.cur = postgres_conn.cursor()
-        self.logger = Logger().get_logger()
+        # logging-only change: use classmethod + hierarchical name
+        self.logger = Logger.get_logger("playmaker.data_loader.dal")
 
-
-    def flex_query(self, query:str, if_select:bool):
+    def flex_query(self, query: str, if_select: bool):
         """
         function to send a query to the postgres
         :param query: the sql query to execute on the postgres.
@@ -21,26 +21,23 @@ class PostgresDAL:
             self.cur.execute(query)
 
             if if_select:
-
-                return_rows = []
-
                 rows = self.cur.fetchall()
-                for row in rows:
-                    return_rows.append(row)
-
-                return return_rows
-
+                self.logger.info("SELECT executed", extra={"row_count": len(rows)})
+                return list(rows)
             else:
                 self.postgres_conn.commit()
                 self.cur.close()
-                print(f"{query} - successfully executed.")
-
+                self.logger.info("Non-SELECT executed", extra={"query": query})
         except Exception as e:
-            print(f'failed to execute query to postgres - exception: {e}')
+            # logging-only change: capture traceback
+            self.logger.exception("flex_query failed", extra={"query": query, "error": str(e)})
 
     def insert_competition(self, comp):
         try:
-            self.logger.info(f'inserting competition - {comp} - to postgres..')
+            self.logger.info(
+                "Inserting competition",
+                extra={"competition_id": comp.get("id"), "code": comp.get("code")}
+            )
             self.cur.execute("""
                 INSERT INTO raw_competitions (
                     competition_id, name, code, area_name, area_code, type,
@@ -66,17 +63,20 @@ class PostgresDAL:
                 comp.get("lastUpdated"),
                 json.dumps(comp)
             ))
-
             self.postgres_conn.commit()
-
-            self.logger.info(f'competition inserted successfully.')
-
+            self.logger.info(
+                "Competition inserted successfully",
+                extra={"competition_id": comp.get("id")}
+            )
         except Exception as e:
-            self.logger.error("insert competition failed", extra={"error": str(e)})
+            self.logger.exception("insert competition failed", extra={"error": str(e), "competition_id": comp.get("id")})
 
     def insert_team(self, team):
         try:
-            self.logger.info(f'inserting team - {team} - to postgres..')
+            self.logger.info(
+                "Inserting team",
+                extra={"team_id": team.get("id"), "name": team.get("name")}
+            )
             self.cur.execute("""
                 INSERT INTO raw_teams (
                     team_id, name, short_name, tla, area_name, area_code,
@@ -104,15 +104,20 @@ class PostgresDAL:
                 json.dumps(team)
             ))
             self.postgres_conn.commit()
-
-            self.logger.info(f'team inserted successfully.')
-
+            self.logger.info("Team inserted successfully", extra={"team_id": team.get("id")})
         except Exception as e:
-            self.logger.error("insert team failed", extra={"error": str(e)})
+            self.logger.exception("insert team failed", extra={"error": str(e), "team_id": team.get("id")})
 
     def insert_match(self, match):
         try:
-            self.logger.info(f'inserting match - {match} - to postgres..')
+            self.logger.info(
+                "Inserting match",
+                extra={
+                    "match_id": match.get("id"),
+                    "home_team_id": (match.get("homeTeam") or {}).get("id"),
+                    "away_team_id": (match.get("awayTeam") or {}).get("id"),
+                }
+            )
             self.cur.execute("""
                 INSERT INTO raw_matches (
                     match_id, area_id, competition_id, season_id, utc_date, status,
@@ -159,17 +164,17 @@ class PostgresDAL:
                 json.dumps(match.get("referees")),
                 json.dumps(match)
             ))
-
             self.postgres_conn.commit()
-
-            self.logger.info(f'match inserted successfully.')
-
+            self.logger.info("Match inserted successfully", extra={"match_id": match.get("id")})
         except Exception as e:
-            self.logger.error("insert match failed", extra={"error": str(e)})
+            self.logger.exception("insert match failed", extra={"error": str(e), "match_id": match.get("id")})
 
     def insert_standing(self, comp_id, season_id, standing):
         try:
-            self.logger.info(f'inserting standing - {standing} - to postgres..')
+            self.logger.info(
+                "Inserting standing",
+                extra={"competition_id": comp_id, "season_id": season_id, "stage": standing.get("stage")}
+            )
             self.cur.execute("""
                 INSERT INTO raw_standings (
                     competition_id, season_id, stage, type, group_name, table_data,
@@ -187,8 +192,6 @@ class PostgresDAL:
                 json.dumps(standing)
             ))
             self.postgres_conn.commit()
-
-            self.logger.info(f'standing inserted successfully.')
-
+            self.logger.info("Standing inserted successfully", extra={"competition_id": comp_id, "season_id": season_id})
         except Exception as e:
-            self.logger.error("insert standing failed", extra={"error": str(e)})
+            self.logger.exception("insert standing failed", extra={"error": str(e), "competition_id": comp_id, "season_id": season_id})

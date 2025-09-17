@@ -1,4 +1,3 @@
-# services/model/predictor/pipeline.py
 from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
@@ -8,10 +7,7 @@ from typing import Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 
-from services.model.data_access import (
-    load_cfg,
-    read_training_frame,
-)
+from services.model.data_access import load_cfg, read_training_frame
 
 from .artifact_loader import JoblibArtifactLoader
 from .fixtures_repo import FixturesRepositoryDB, get_team_lookup
@@ -22,6 +18,8 @@ from .imputer import TrainMeansImputer
 from .predictor import ThreeClassPredictor
 from .writer import DBPredictionsWriter
 
+from Playmaker.shared.logging.logger import Logger
+log = Logger.get_logger(name="playmaker.model.predictor.pipeline")
 
 def predict_pipeline(
     cfg_path: str,
@@ -30,39 +28,32 @@ def predict_pipeline(
     limit: int | None = None,
 ) -> int:
     """Load model, prepare features for scheduled fixtures, predict, and upsert."""
-    print(">> Loading config…")
+    log.info("pipeline.start", extra={"cfg_path": cfg_path, "model_id": model_id, "limit": limit})
+
     cfg: Dict[str, Any] = load_cfg(cfg_path)
 
-    print(">> Loading model artifact…")
     model, meta = JoblibArtifactLoader().load(artifact_path)
     feature_cols = meta["feature_cols"]
-    print(f"   Using artifact with {len(feature_cols)} features.")
+    log.info("pipeline.artifact_ready", extra={"n_features": len(feature_cols)})
 
-    print(">> Reading history (match_clean)…")
     team_map = get_team_lookup(cfg)
     df_hist_db = read_training_frame(cfg)
     df_hist = MatchHistoryAdapter().adapt(df_hist_db, team_map)
 
-    print(">> Building Elo timeline…")
     elo_timeline = EloTimeline().build(df_hist)
 
-    print(">> Recomputing training feature means (for imputation)…")
     train_means = TrainMeansImputer().fit_training_means(df_hist)
 
-    print(">> Reading scheduled fixtures…")
     fixtures = FixturesRepositoryDB(cfg).list_scheduled(limit=limit)
     if fixtures.empty:
-        print("   No fixtures with status='SCHEDULED'. Nothing to predict.")
+        log.info("pipeline.no_scheduled_fixtures")
         return 0
-    print(f"   Fixtures to score: {len(fixtures)}")
+    log.info("pipeline.fixtures_to_score", extra={"count": len(fixtures)})
 
-    print(">> Building pre-match features for fixtures…")
     Xf_raw, snap = FixtureFeatureRows().build_rows(fixtures, df_hist, elo_timeline=elo_timeline)
 
-    print(">> Imputing and aligning to model's feature order…")
     Xf = TrainMeansImputer().transform(Xf_raw, train_means, feature_cols)
 
-    print(">> Predicting probabilities…")
     y_proba = ThreeClassPredictor().predict_proba(model, Xf)
 
     # crude xG proxy from 10-match GF means (kept from your original)
@@ -91,11 +82,9 @@ def predict_pipeline(
         })
     df_pred = pd.DataFrame(rows)
 
-    print(">> Writing predictions (upsert)…")
     written = DBPredictionsWriter().upsert(cfg, df_pred)
-    print(f"   Upserted rows: {written}")
+    log.info("pipeline.upsert_done", extra={"rows": int(written)})
     return written
-
 
 def main():
     parser = argparse.ArgumentParser(description="Score scheduled fixtures and upsert predictions.")
@@ -113,13 +102,15 @@ def main():
         n = predict_pipeline(cfg_path=args.cfg, model_id=args.model_id,
                              artifact_path=args.artifact, limit=args.limit)
         if n == 0:
+            log.info("pipeline.exit_no_rows")
             print("\nℹ️ Nothing scored (no fixtures).")
         else:
+            log.info("pipeline.exit_success", extra={"rows": n})
             print(f"\n✅ Scoring complete. Rows written: {n}")
     except Exception as e:
+        log.exception("pipeline.failed", extra={"error": str(e)})
         print(f"\n❌ Prediction failed: {e}")
         raise
-
 
 if __name__ == "__main__":
     main()

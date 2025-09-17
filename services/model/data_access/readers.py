@@ -4,6 +4,10 @@ from typing import Any, Dict, Iterable, Optional, Sequence
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
 
+from shared.logging.logger import Logger
+log = Logger.get_logger(name="playmaker.model.data_access.readers")
+
+
 class MatchReader:
     """
     Reads historical matches for training in a football-data.co.uk shaped frame:
@@ -16,17 +20,23 @@ class MatchReader:
 
     def read_match_clean(self, columns: Optional[Sequence[str]] = None) -> pd.DataFrame:
         table = self.cfg["tables"]["train"]
-        # Safer approach: always select *, subset in pandas
         sql = f"SELECT * FROM {table} ORDER BY match_date;"
         try:
+            log.info("read_match_clean.query", extra={"table": table})
             df = pd.read_sql_query(sql, self.db.engine())
             if columns:
                 missing = [c for c in columns if c not in df.columns]
                 if missing:
+                    log.error("read_match_clean.columns_missing", extra={"table": table, "missing": missing})
                     raise KeyError(f"Columns not found in {table}: {missing}")
                 df = df[list(columns)]
+            log.info(
+                "read_match_clean.ok",
+                extra={"table": table, "rows": int(len(df)), "cols": int(len(df.columns))}
+            )
             return df
         except SQLAlchemyError as e:
+            log.exception("read_match_clean.db_error", extra={"table": table})
             raise RuntimeError(f"Failed to read '{table}': {e}") from e
 
     def read_training_frame(self) -> pd.DataFrame:
@@ -66,8 +76,19 @@ class MatchReader:
             ORDER BY mc.match_date;
         """
         try:
-            return pd.read_sql_query(sql, self.db.engine())
+            log.info("read_training_frame.query", extra={"table": t_train})
+            df = pd.read_sql_query(sql, self.db.engine())
+            # small summary if Date exists
+            try:
+                dmin = pd.to_datetime(df["Date"]).min()
+                dmax = pd.to_datetime(df["Date"]).max()
+                extra = {"rows": int(len(df)), "cols": int(len(df.columns)), "date_min": str(dmin), "date_max": str(dmax)}
+            except Exception:
+                extra = {"rows": int(len(df)), "cols": int(len(df.columns))}
+            log.info("read_training_frame.ok", extra=extra)
+            return df
         except SQLAlchemyError as e:
+            log.exception("read_training_frame.db_error", extra={"table": t_train})
             raise RuntimeError(f"Failed to read training frame from '{t_train}': {e}") from e
 
 
@@ -91,6 +112,10 @@ class FixtureReader:
             ORDER BY match_utc;
         """
         try:
-            return pd.read_sql_query(sql, self.db.engine())
+            log.info("fixtures.read_scheduled.query", extra={"table": table})
+            df = pd.read_sql_query(sql, self.db.engine())
+            log.info("fixtures.read_scheduled.ok", extra={"table": table, "rows": int(len(df))})
+            return df
         except SQLAlchemyError as e:
+            log.exception("fixtures.read_scheduled.db_error", extra={"table": table})
             raise RuntimeError(f"Failed to read scheduled fixtures from '{table}': {e}") from e

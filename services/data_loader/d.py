@@ -1,5 +1,5 @@
 import requests
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 from .postgres_connector import PostgresConnector
 from .postgres_DAL import PostgresDAL
 

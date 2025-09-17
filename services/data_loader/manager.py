@@ -1,5 +1,5 @@
 import requests
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 from .postgres_connector import PostgresConnector
 from .postgres_DAL import PostgresDAL
 
@@ -8,7 +8,7 @@ class Manager:
         self.api_key = api_key
         self.base_url = base_url
         self.postgres_url = postgres_url
-        self.logger = Logger.get_logger(name="playmaker_data_loader")
+        self.logger = Logger.get_logger("playmaker.data_loader.manager")
 
     def fetch_and_insert_all(self):
         try:

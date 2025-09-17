@@ -1,9 +1,10 @@
-# services/model/predictor/feature_rows.py
 from __future__ import annotations
 from typing import Dict, Tuple, List
 import numpy as np
 import pandas as pd
+from Playmaker.shared.logging.logger import Logger
 
+log = Logger.get_logger(name="playmaker.model.predictor.feature_rows")
 
 def _team_points_from_row(row: pd.Series, team_name: str) -> int:
     if row["HomeTeam"] == team_name:
@@ -15,17 +16,12 @@ def _team_points_from_row(row: pd.Series, team_name: str) -> int:
         if row["FTR"] == "D": return 1
         return 0
 
-
 def _to_utc_naive(ts) -> pd.Timestamp:
-    """
-    Parse any datetime-like into UTC and drop timezone info,
-    so we can safely compare with tz-naive training dates.
-    """
-    t = pd.to_datetime(ts, errors="coerce", utc=True)   # tz-aware UTC
+    """Parse any datetime-like into UTC and drop timezone info."""
+    t = pd.to_datetime(ts, errors="coerce", utc=True)
     if pd.isna(t):
         return t
-    return t.tz_convert("UTC").tz_localize(None)        # drop tz → tz-naive
-
+    return t.tz_convert("UTC").tz_localize(None)
 
 def _pre_match_rolling(
     df_hist: pd.DataFrame,
@@ -35,9 +31,13 @@ def _pre_match_rolling(
     goal_window: int = 10,
     elo_timeline: Dict[str, pd.DataFrame] | None = None
 ) -> Dict[str, float]:
+    # Sanity
+    if df_hist is None or df_hist.empty:
+        log.warning("feature_rows.empty_history_for_team", extra={"team": team})
+        return {k: np.nan for k in
+                ["form5","gf10","ga10","shots5","corn5","yel5","red5","n_prior","rest_days","elo"]}
 
-    # Ensure comparable (tz-naive) dates
-    dates_all = pd.to_datetime(df_hist["Date"], errors="coerce")  # tz-naive (your training pipeline standard)
+    dates_all = pd.to_datetime(df_hist["Date"], errors="coerce")
     as_of_naive = _to_utc_naive(as_of)
 
     mask_team = (df_hist["HomeTeam"] == team) | (df_hist["AwayTeam"] == team)
@@ -49,12 +49,11 @@ def _pre_match_rolling(
     last_date = h["Date"].max() if not h.empty else pd.NaT
     rest_days = (as_of_naive - last_date).days if pd.notna(last_date) else np.nan
 
-    # Pull elo as-of if provided
+    # Elo as-of
     elo_as_of = np.nan
     if elo_timeline is not None:
         t = elo_timeline.get(team)
         if t is not None and not t.empty:
-            # 't.date' should be tz-naive; ensure so:
             t_dates = pd.to_datetime(t["date"], errors="coerce")
             idx = t_dates.searchsorted(as_of_naive, side="right") - 1
             if idx >= 0:
@@ -97,7 +96,6 @@ def _pre_match_rolling(
         "elo": float(elo_as_of) if pd.notna(elo_as_of) else np.nan,
     }
 
-
 class FixtureFeatureRows:
     """SRP: build pre-match feature rows for fixtures, aligned with training features."""
     def build_rows(
@@ -107,11 +105,15 @@ class FixtureFeatureRows:
         elo_timeline: Dict[str, pd.DataFrame] | None = None
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
+        if fixtures is None or fixtures.empty:
+            log.warning("feature_rows.no_fixtures")
+            return pd.DataFrame(), pd.DataFrame()
+
         rows: List[Dict] = []
         snaps: List[Dict] = []
 
+        log.debug("feature_rows.start", extra={"fixtures": len(fixtures)})
         for _, r in fixtures.iterrows():
-            # Normalize fixture kickoff time to UTC-naive for comparison
             as_of = _to_utc_naive(r["match_utc"])
             home, away = r["home_name"], r["away_name"]
 
@@ -141,4 +143,5 @@ class FixtureFeatureRows:
 
         Xf = pd.DataFrame(rows)
         snap = pd.DataFrame(snaps)
+        log.info("feature_rows.built", extra={"rows": len(Xf)})
         return Xf, snap

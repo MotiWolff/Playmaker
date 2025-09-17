@@ -1,14 +1,15 @@
+
+
 import json
 from typing import Any, Dict, Optional
 
 from kafka import KafkaProducer
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 
 from .config import KafkaConfig
 
-
 class JsonKafkaProducer:
-    """Kafka producer that sends JSON-serializable payloads.
+    """Send JSON-serializable payloads.
 
     Usage:
         producer = JsonKafkaProducer()
@@ -17,8 +18,8 @@ class JsonKafkaProducer:
 
     def __init__(self, config: Optional[KafkaConfig] = None, **overrides: Any) -> None:
         self.config = config or KafkaConfig.from_env()
-        # Initialize reusable logger
-        self.logger = Logger.get_logger(name="playmaker_kafka_producer")
+        self.log = Logger.get_logger(name="playmaker.kafka.producer")
+
         producer_kwargs: Dict[str, Any] = {
             **self.config.common_security_kwargs(),
             "value_serializer": lambda v: json.dumps(v).encode("utf-8"),
@@ -29,18 +30,46 @@ class JsonKafkaProducer:
         }
         producer_kwargs.update(overrides)
         self._producer = KafkaProducer(**producer_kwargs)
+        self.log.info("kafka.producer.init")
 
-    def send_json(self, topic: str, value: Any, key: Optional[Any] = None, headers: Optional[Dict[str, str]] = None) -> None:
+    def send_json(
+        self,
+        topic: str,
+        value: Any,
+        key: Optional[Any] = None,
+        headers: Optional[Dict[str, str]] = None
+    ) -> None:
         kafka_headers = []
         if headers:
             kafka_headers = [(k, str(v).encode("utf-8")) for k, v in headers.items()]
-        self._producer.send(topic, key=key, value=value, headers=kafka_headers)
+        fut = self._producer.send(topic, key=key, value=value, headers=kafka_headers)
+
+        # attach callbacks for observability (non-blocking)
+        def _on_success(record_md):
+            try:
+                self.log.debug("kafka.producer.acked", extra={
+                    "topic": record_md.topic, "partition": record_md.partition, "offset": record_md.offset
+                })
+            except Exception:
+                pass
+
+        def _on_err(excp):
+            self.log.exception("kafka.producer.send_failed", extra={"topic": topic, "error": str(excp)})
+
+        fut.add_callback(_on_success)
+        fut.add_errback(_on_err)
 
     def flush(self) -> None:
-        self._producer.flush()
+        try:
+            self._producer.flush()
+            self.log.info("kafka.producer.flushed")
+        except Exception:
+            pass
 
     def close(self) -> None:
-        self._producer.flush()
-        self._producer.close()
-
-
+        try:
+            self._producer.flush()
+            self._producer.close()
+            self.log.info("kafka.producer.closed")
+        except Exception:
+            pass

@@ -1,11 +1,11 @@
 import psycopg2
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 
 class PostgresConnector:
     def __init__(self, postgres_url:str):
         self.postgres_url = postgres_url
         self.conn = None
-        self.logger = Logger.get_logger(name="playmaker_data_loader")
+        self.logger = Logger.get_logger("playmaker.data_loader.db")
 
     def connect(self):
         try:

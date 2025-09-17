@@ -1,14 +1,18 @@
-# services/model/predictor/fixtures_repo.py
 from __future__ import annotations
 from typing import Dict, Optional
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
-from services.model.data_access import Database  # use the facade
+from services.model.data_access import Database  # facade
+from Playmaker.shared.logging.logger import Logger
+
+log = Logger.get_logger(name="playmaker.model.predictor.fixtures_repo")
 
 def get_team_lookup(cfg: Dict[str, any]) -> pd.DataFrame:
     sql = "SELECT team_id, name FROM teams;"
     eng = Database(cfg).engine()
-    return pd.read_sql_query(sql, eng)
+    df = pd.read_sql_query(sql, eng)
+    log.debug("fixtures_repo.team_lookup", extra={"rows": len(df)})
+    return df
 
 class FixturesRepositoryDB:
     """
@@ -36,7 +40,9 @@ class FixturesRepositoryDB:
         try:
             df = pd.read_sql_query(sql, eng)
         except SQLAlchemyError as e:
+            log.exception("fixtures_repo.db_read_failed", extra={"table": table})
             raise RuntimeError(f"Failed to read fixtures from '{table}': {e}") from e
         df["home_name"] = df["home_name"].fillna("HOME_UNKNOWN")
         df["away_name"] = df["away_name"].fillna("AWAY_UNKNOWN")
+        log.info("fixtures_repo.list_scheduled", extra={"rows": len(df), "limit": limit})
         return df

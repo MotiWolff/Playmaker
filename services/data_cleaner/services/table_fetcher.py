@@ -1,8 +1,10 @@
+# Playmaker/services/data_cleaner/services/table_fetcher.py
 from sqlalchemy import MetaData, Table, select
 from sqlalchemy.orm import Session
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 
-my_logger = Logger.get_logger()
+# use a hierarchical name so it rolls up under "playmaker"
+log = Logger.get_logger(name="playmaker.data_cleaner.table_fetcher")
 
 
 class TableFetcher:
@@ -15,7 +17,8 @@ class TableFetcher:
             table = Table(table_name, metadata, autoload_with=self.db.bind)
             query = select(table)
             data = self.db.execute(query).mappings().all()
-            my_logger.info(f"The {table_name} data table successfully pulled from database.")
+            log.info(f"table.fetch.ok table={table_name} rows={len(data)}")
             return data
-        except Exception as e:
-            my_logger.error(f"Error fetching table {table_name} from database.\nError:{e}")
+        except Exception:
+            # includes stack trace; keeps behavior (no re-raise)
+            log.exception(f"table.fetch.error table={table_name}")

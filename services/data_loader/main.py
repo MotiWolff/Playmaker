@@ -1,11 +1,14 @@
 import os
 from dotenv import load_dotenv
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 from .manager import Manager
 
 load_dotenv()
 
-logger = Logger.get_logger(name="playmaker_data_loader")
+
+
+logger = Logger.get_logger("playmaker.data_loader.main")
+
 
 FOOTBALL_DATA_API_KEY = os.getenv('FOOTBALL_DATA_API_KEY') or os.getenv('FOOTBALL_API_KEY')
 BASE_URL = os.getenv('BASE_URL', 'https://api.football-data.org/v4')

@@ -10,7 +10,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from deep_translator import GoogleTranslator
 from app.config import settings
+from Playmaker.shared.logging.logger import Logger
 
+log = Logger.get_logger(name="playmaker.odds_winner.scraper")
 
 class WinnerScraper:
     def __init__(self):
@@ -23,13 +25,11 @@ class WinnerScraper:
         chrome_options.add_argument("--lang=he-IL")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
         # Use Selenium URL from settings if remote Selenium is used
-        self.driver = webdriver.Remote(
-            command_executor=settings.SELENIUM_URL,
-            options=chrome_options
-        )
+        self.driver = webdriver.Remote(command_executor=settings.SELENIUM_URL, options=chrome_options)
         self.wait = WebDriverWait(self.driver, 45)
         self.url = settings.SCRAPE_URL
         self.date_format = settings.SCRAPE_DATE_FORMAT
+        log.info("scraper.init", extra={"selenium_url": settings.SELENIUM_URL, "url": self.url})
 
     def clean_text(self, t: str) -> str:
         if not t:
@@ -49,25 +49,30 @@ class WinnerScraper:
             if not text.strip():
                 return text
             return GoogleTranslator(source="he", target="en").translate(text)
-        except Exception:
+        except Exception as e:
+            log.warning("scraper.translate_failed", extra={"text": text, "error": str(e)})
             return text
 
-    def scrape(self):
+    def scrape(self) -> pd.DataFrame:
+        t0 = time.perf_counter()
         self.driver.get(self.url)
         # Basic page ready
         try:
             self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        except Exception:
-            pass
-        # Wait for odds container (selector may need adjustment if site changes)
+        except Exception as e:
+            log.warning("scraper.body_wait_failed", extra={"error": str(e)})
+
+        # Wait for odds container
         try:
             self.wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".market")))
-        except Exception:
-            # Save screenshot to help diagnose blank pages/consent screens
+        except Exception as e:
+            log.warning("scraper.market_wait_failed", extra={"error": str(e)})
             try:
                 self.driver.save_screenshot("/tmp/winner.png")
+                log.info("scraper.screenshot_saved", extra={"path": "/tmp/winner.png"})
             except Exception:
                 pass
+            self._quit_quiet()
             return pd.DataFrame([])
 
         all_markets = self.driver.find_elements(By.CSS_SELECTOR, ".market")
@@ -88,7 +93,6 @@ class WinnerScraper:
                     except Exception:
                         pass
 
-                    # New DOM: outcomes are under .outcome
                     outcomes = market.find_elements(By.CSS_SELECTOR, ".outcome")
                     if len(outcomes) >= 3:
                         def get_name(el):
@@ -120,18 +124,24 @@ class WinnerScraper:
                             "date": today,
                             "league": league_name
                         })
-            except Exception:
+            except Exception as e:
+                log.debug("scraper.market_parse_skip", extra={"error": str(e)})
                 continue
 
-        try:
-            if not records:
-                # Save a screenshot if nothing parsed
-                self.driver.save_screenshot("/tmp/winner.png")
-        except Exception:
-            pass
-        finally:
+        if not records:
             try:
-                self.driver.quit()
+                self.driver.save_screenshot("/tmp/winner.png")
+                log.info("scraper.screenshot_saved", extra={"path": "/tmp/winner.png"})
             except Exception:
                 pass
+
+        self._quit_quiet()
+        dt = time.perf_counter() - t0
+        log.info("scraper.done", extra={"rows": len(records), "sec": round(dt, 2)})
         return pd.DataFrame(records)
+
+    def _quit_quiet(self):
+        try:
+            self.driver.quit()
+        except Exception:
+            pass

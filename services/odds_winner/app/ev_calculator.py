@@ -1,3 +1,6 @@
+from Playmaker.shared.logging.logger import Logger
+log = Logger.get_logger(name="playmaker.odds_winner.ev")
+
 class EvCalculator:
     """Encapsulates EV calculation logic (single responsibility)."""
 

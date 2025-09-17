@@ -1,25 +1,32 @@
+# Playmaker/services/data_cleaner/main.py
 from dotenv import load_dotenv
 load_dotenv()
+
 import os
 import uvicorn
-from server import app
 from pathlib import Path
 import sys
+
 base_path = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(base_path))
 
-from shared.logging.logger import Logger
+from Playmaker.shared.logging.logger import Logger
 
-my_logger = Logger.get_logger()
+log = Logger.get_logger(name="playmaker.data_cleaner.main")
 
 if __name__ == "__main__":
-    try: 
-        uvicorn.run(
-            "server:app",
-            host=os.getenv("HOST", "0.0.0.0"),
-            port=int(os.getenv("PORT", 8000)),
-            reload=True
-        )
-        my_logger.info(f"Clean server is up on port:{os.getenv("PORT")}")
-    except Exception as e:
-        my_logger.error(f"Error running clean server.\nError:{e}")
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8000))
+    reload = os.getenv("RELOAD", "true").lower() == "true"
+
+    try:
+        # log before starting (since uvicorn.run() blocks)
+        log.info("server.start", extra={"host": host, "port": port, "reload": reload})
+
+        uvicorn.run("server:app", host=host, port=port, reload=reload)
+
+        # will log after server exits cleanly
+        log.info("server.stop")
+    except Exception:
+        # captures stack trace automatically
+        log.exception("server.error")

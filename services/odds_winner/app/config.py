@@ -1,9 +1,11 @@
+
 import os
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+from Playmaker.shared.logging.logger import Logger
 
-# Load .env automatically
 load_dotenv()
+log = Logger.get_logger(name="playmaker.odds_winner.config")
 
 class Settings(BaseSettings):
     # Database
@@ -32,3 +34,12 @@ class Settings(BaseSettings):
         )
 
 settings = Settings()
+
+# Log once (mask pwd)
+try:
+    masked = settings.DATABASE_URL.replace(settings.POSTGRES_PASSWORD, "****") if settings.POSTGRES_PASSWORD else settings.DATABASE_URL
+    log.debug("config.database_url", extra={"url": masked})
+except Exception:
+    pass
+log.debug("config.scraper", extra={"selenium_url": settings.SELENIUM_URL, "scrape_url": settings.SCRAPE_URL})
+

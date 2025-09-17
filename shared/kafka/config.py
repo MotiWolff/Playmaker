@@ -1,22 +1,19 @@
 import os
 from dataclasses import dataclass
-from typing import Optional, Type, TypeVar
-
+from typing import Optional, Type
 
 @dataclass(frozen=True)
 class KafkaConfig:
-    """Configuration for Kafka connectivity via environment variables.
+    """Configuration via env.
 
-    Variables:
-      - KAFKA_BOOTSTRAP_SERVERS: comma-separated host:port list
-      - KAFKA_SECURITY_PROTOCOL: PLAINTEXT (default), SASL_PLAINTEXT, SASL_SSL, SSL
-      - KAFKA_SASL_MECHANISM: e.g., PLAIN
-      - KAFKA_SASL_USERNAME / KAFKA_SASL_PASSWORD: for SASL auth
-      - KAFKA_CLIENT_ID: client identifier
-      - KAFKA_SESSION_TIMEOUT_MS: consumer session timeout
-      - KAFKA_AUTO_OFFSET_RESET: earliest/latest
+    KAFKA_BOOTSTRAP_SERVERS: comma-separated host:port
+    KAFKA_SECURITY_PROTOCOL: PLAINTEXT | SASL_PLAINTEXT | SASL_SSL | SSL
+    KAFKA_SASL_MECHANISM: PLAIN | SCRAM-SHA-256 | SCRAM-SHA-512 ...
+    KAFKA_SASL_USERNAME / KAFKA_SASL_PASSWORD
+    KAFKA_CLIENT_ID
+    KAFKA_SESSION_TIMEOUT_MS
+    KAFKA_AUTO_OFFSET_RESET: earliest | latest
     """
-
     bootstrap_servers: str
     security_protocol: str
     sasl_mechanism: Optional[str]
@@ -28,10 +25,6 @@ class KafkaConfig:
 
     @classmethod
     def from_env(cls: "Type[KafkaConfig]") -> "KafkaConfig":
-        """Build KafkaConfig from environment variables.
-
-        Prefer this constructor across the codebase to avoid importing-time env evaluation surprises.
-        """
         return cls(
             bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
             security_protocol=os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
@@ -44,10 +37,7 @@ class KafkaConfig:
         )
 
     def common_security_kwargs(self) -> dict:
-        """Return kwargs dict for kafka-python clients based on config.
-
-        Note: `bootstrap_servers` is returned as a list as expected by kafka-python.
-        """
+        """Args usable for Admin/Producer/Consumer."""
         kwargs: dict = {
             "bootstrap_servers": [s.strip() for s in self.bootstrap_servers.split(",") if s.strip()],
             "client_id": self.client_id,
@@ -60,5 +50,3 @@ class KafkaConfig:
                 kwargs["sasl_plain_username"] = self.sasl_username
                 kwargs["sasl_plain_password"] = self.sasl_password
         return kwargs
-
-
