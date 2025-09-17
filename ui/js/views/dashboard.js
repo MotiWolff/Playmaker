@@ -18,18 +18,20 @@ export async function renderDashboard() {
   `;
   root.appendChild(hero);
 
-  // Responsible gambling banner
+  // Responsible gambling banner (sticky)
   const banner = document.createElement("div");
-  banner.className = "container mt-3";
+  banner.className = "sticky-banner";
   banner.innerHTML = `
-    <div class="alert alert-warning alert-dismissible fade show" role="alert">
-      <div class="d-flex align-items-center gap-2">
-        <i class="fas fa-exclamation-triangle"></i>
-        <div>
-          <strong>Gambling can be addictive.</strong> Always bet legally and responsibly. If you feel your gambling is becoming a problem, seek help in your region.
+    <div class="container">
+      <div class="alert alert-warning alert-dismissible fade show shadow" role="alert">
+        <div class="d-flex align-items-center gap-2">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <strong>Gambling can be addictive.</strong> Always bet legally and responsibly. If you feel your gambling is becoming a problem, seek help in your region.
+          </div>
         </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
   `;
   root.appendChild(banner);
