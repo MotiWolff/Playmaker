@@ -11,20 +11,54 @@ from sqlalchemy.engine import Engine
 
 app = FastAPI(title="Football Predictions API")
 
-# CORS for local development: allow all origins to avoid dev proxy issues
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS configuration: allow specific origins from environment or default to all for local dev
+# Note: When allow_credentials=True, cannot use allow_origins=["*"] - must specify exact origins
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+if cors_origins_env == "*":
+    # For local development: allow all origins without credentials
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # For production: allow specific origins with credentials support
+    allowed_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
 # --- DB engine for real queries (predictions + odds) ---
 DB_DSN = os.getenv("DB_DSN") or os.getenv("DATABASE_URL")
 engine: Optional[Engine] = None
 if DB_DSN:
-    engine = create_engine(DB_DSN, pool_pre_ping=True, future=True)
+    # Ensure SSL is configured for Render PostgreSQL
+    # Render PostgreSQL requires SSL, so we add sslmode=require if not present
+    db_url = DB_DSN
+    if "sslmode" not in db_url.lower() and "ssl" not in db_url.lower():
+        # Add sslmode parameter if connection string doesn't have SSL config
+        separator = "&" if "?" in db_url else "?"
+        db_url = f"{db_url}{separator}sslmode=require"
+    
+    # Create engine with SSL support and connection pooling
+    # Note: Render PostgreSQL requires SSL connections
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,  # Verify connections before using
+        pool_size=5,  # Maintain 5 connections in pool
+        max_overflow=10,  # Allow up to 10 additional connections
+        pool_recycle=3600,  # Recycle connections after 1 hour to prevent stale connections
+        connect_args={
+            "connect_timeout": 10,  # 10 second connection timeout
+        },
+        echo=False,  # Set to True for SQL query debugging
+    )
 
 # --- Lightweight response models for the DB-backed endpoint ---
 class ApiTeam(BaseModel):
